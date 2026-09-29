@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - Automated tests: protocol and validation tests (always run), plus report tests against any `.rpt` given in `RPTMCP_TEST_REPORT`.
 - CI and tag-triggered release workflows.
 
+### Fixed
+- One build now runs on both Crystal runtime generations. Newer SPs (e.g. SP36) install assemblies as 13.0.4000.0 and older ones as 13.0.2000.0, with no publisher policy between them; rpt-mcp now loads whichever is installed.
+
 ### Changed
 - `batch_edit` validates every operation's tool name before opening the report.
 - The build picks up either 13.0.2000.0 or 13.0.4000.0 Crystal assemblies automatically.

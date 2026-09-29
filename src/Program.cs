@@ -18,6 +18,9 @@ namespace RptMcp
         [STAThread]
         private static int Main(string[] args)
         {
+            // Must run before any Crystal type is touched.
+            AppDomain.CurrentDomain.AssemblyResolve += CrystalVersionFallback;
+
             var utf8 = new UTF8Encoding(false);
             _out = new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true, NewLine = "\n" };
             // Anything else that writes to Console.Out must not corrupt the protocol stream.
@@ -101,6 +104,32 @@ namespace RptMcp
         private static void Send(JObject msg)
         {
             lock (_out) _out.WriteLine(msg.ToString(Formatting.None));
+        }
+
+        /// <summary>
+        /// Crystal runtime SPs install their assemblies either as 13.0.2000.0 (older) or 13.0.4000.0 (SP 21+),
+        /// without a publisher policy between them. When the version this exe was built against is missing,
+        /// load the other one so a single build runs on either runtime.
+        /// </summary>
+        private static readonly Version[] CrystalVersions = { new Version(13, 0, 4000, 0), new Version(13, 0, 2000, 0) };
+        [ThreadStatic] private static bool _resolving;
+
+        private static System.Reflection.Assembly CrystalVersionFallback(object sender, ResolveEventArgs e)
+        {
+            var wanted = new System.Reflection.AssemblyName(e.Name);
+            if (_resolving || !wanted.Name.StartsWith("CrystalDecisions.", StringComparison.Ordinal) || wanted.Version == null) return null;
+            _resolving = true;
+            try
+            {
+                foreach (var v in CrystalVersions)
+                {
+                    if (v == wanted.Version) continue;
+                    var alt = new System.Reflection.AssemblyName(e.Name) { Version = v };
+                    try { return System.Reflection.Assembly.Load(alt); } catch (FileNotFoundException) { } catch (FileLoadException) { }
+                }
+                return null;
+            }
+            finally { _resolving = false; }
         }
 
         internal static void Log(string text) => Console.Error.WriteLine($"[{DateTime.Now:HH:mm:ss}] {text}");
