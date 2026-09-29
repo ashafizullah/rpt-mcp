@@ -54,8 +54,10 @@ All tools accept `subreport` to work inside a subreport.
 ## Install
 
 1. Install the SAP Crystal Reports runtime (see Requirements).
-2. Download `rpt-mcp-<version>-win-x64.zip` from [Releases](https://github.com/ashafizullah/rpt-mcp/releases) and unzip it anywhere, e.g. `C:\Tools\rpt-mcp`.
-3. Register `rpt-mcp.exe` with your MCP client (see below).
+2. Get rpt-mcp in one of these ways:
+   - **Zip:** download `rpt-mcp-<version>-win-x64.zip` from [Releases](https://github.com/ashafizullah/rpt-mcp/releases), unzip it anywhere (e.g. `C:\Tools\rpt-mcp`), then register `rpt-mcp.exe` with your MCP client (see below).
+   - **MCP Bundle:** open `rpt-mcp-<version>.mcpb` from Releases in a client that supports [MCP Bundles](https://github.com/modelcontextprotocol/mcpb), such as Claude Desktop.
+   - **MCP Registry:** rpt-mcp is listed in the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.ashafizullah/rpt-mcp`.
 
 ## Build from source
 

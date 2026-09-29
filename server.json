@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ashafizullah/rpt-mcp",
+  "title": "rpt-mcp (SAP Crystal Reports)",
+  "description": "Inspect and edit SAP Crystal Reports .rpt files (Windows; needs the Crystal runtime).",
+  "repository": {
+    "url": "https://github.com/ashafizullah/rpt-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/ashafizullah/rpt-mcp",
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/ashafizullah/rpt-mcp/releases/download/v0.0.0/rpt-mcp-0.0.0.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

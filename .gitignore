@@ -5,3 +5,5 @@ obj/
 connections.json
 _rptmcp_backup/
 TestResults/
+dist/
+*.mcpb

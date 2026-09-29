@@ -17,6 +17,10 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      mcpb: ${{ steps.package.outputs.mcpb }}
+      sha256: ${{ steps.package.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,9 +46,11 @@ jobs:
           dotnet test RptMcp.sln -c Release --no-build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Package
+      - name: Package zip and MCP bundle
+        id: package
         shell: pwsh
         run: |
+          $version = $env:TAG.TrimStart('v')
           $stage = Join-Path $env:RUNNER_TEMP "rpt-mcp"
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item src/bin/Release/rpt-mcp.exe, src/bin/Release/rpt-mcp.exe.config, src/bin/Release/Newtonsoft.Json.dll $stage
@@ -53,7 +59,16 @@ jobs:
           if (Get-ChildItem $stage -Filter "CrystalDecisions*") { throw "SAP assemblies must not be packaged" }
           $zip = "rpt-mcp-$env:TAG-win-x64.zip"
           Compress-Archive -Path $stage -DestinationPath $zip -Force
+
+          ./build/make-mcpb.ps1 -Version $version -OutDir .
+          $mcpb = "rpt-mcp-$version.mcpb"
+          $sha = (Get-FileHash $mcpb -Algorithm SHA256).Hash.ToLowerInvariant()
+
           "ZIP=$zip" >> $env:GITHUB_ENV
+          "MCPB=$mcpb" >> $env:GITHUB_ENV
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "mcpb=$mcpb" >> $env:GITHUB_OUTPUT
+          "sha256=$sha" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub release
         shell: pwsh
@@ -62,7 +77,45 @@ jobs:
         run: |
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:TAG $env:ZIP --clobber
+            gh release upload $env:TAG $env:ZIP $env:MCPB --clobber
           } else {
-            gh release create $env:TAG $env:ZIP --title "rpt-mcp $env:TAG" --generate-notes
+            gh release create $env:TAG $env:ZIP $env:MCPB --title "rpt-mcp $env:TAG" --generate-notes
           }
+
+  # Lists the release in the official MCP Registry (registry.modelcontextprotocol.io).
+  # Authenticates with GitHub OIDC, which proves ownership of the io.github.ashafizullah namespace; no secret needed.
+  publish-registry:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Fill in server.json
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          MCPB: ${{ needs.release.outputs.mcpb }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${MCPB}"
+          jq --arg v "$VERSION" --arg u "$url" --arg s "$SHA256" \
+            '.version = $v | .packages[0].identifier = $u | .packages[0].fileSha256 = $s' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+          # The registry checks that the bundle is downloadable; make sure it is.
+          curl -fsSIL "$url" > /dev/null
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

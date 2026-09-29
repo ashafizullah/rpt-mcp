@@ -4,8 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-29
+
+### Added
+- Each release now also ships an **MCP Bundle** (`rpt-mcp-<version>.mcpb`) and is published to the official MCP Registry as `io.github.ashafizullah/rpt-mcp`.
+
 ### Fixed
 - `initialize` reported the server version as 0.1.0 regardless of the release; it now reports the build's version.
+
+### Changed
+- Release binaries no longer embed local build paths (deterministic build with `PathMap`).
 
 ## [0.1.1] - 2026-09-29
 
@@ -26,6 +34,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas, parameters, data sources, field formats, conditional formulas, lines, boxes, pictures), with backups, usage guards, `batch_edit` and `export_report`.
 
-[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ashafizullah/rpt-mcp/releases/tag/v0.1.0
