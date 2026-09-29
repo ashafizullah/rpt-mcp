@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>RptMcp</RootNamespace>
+    <AssemblyName>rpt-mcp</AssemblyName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.1.0</Version>
+    <CrGacMsil>C:\Windows\assembly\GAC_MSIL</CrGacMsil>
+    <CrVer>13.0.2000.0__692fbea5521e1304</CrVer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <!-- Crystal Reports runtime 13 (SP) must be installed on the machine; assemblies are resolved from the GAC at runtime. -->
+  <ItemGroup>
+    <Reference Include="CrystalDecisions.CrystalReports.Engine"><HintPath>$(CrGacMsil)\CrystalDecisions.CrystalReports.Engine\$(CrVer)\CrystalDecisions.CrystalReports.Engine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.Shared"><HintPath>$(CrGacMsil)\CrystalDecisions.Shared\$(CrVer)\CrystalDecisions.Shared.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportSource"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportSource\$(CrVer)\CrystalDecisions.ReportSource.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.ClientDoc"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.ClientDoc\$(CrVer)\CrystalDecisions.ReportAppServer.ClientDoc.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.Controllers"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.Controllers\$(CrVer)\CrystalDecisions.ReportAppServer.Controllers.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.DataDefModel"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.DataDefModel\$(CrVer)\CrystalDecisions.ReportAppServer.DataDefModel.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.ReportDefModel"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.ReportDefModel\$(CrVer)\CrystalDecisions.ReportAppServer.ReportDefModel.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.CommonObjectModel"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.CommonObjectModel\$(CrVer)\CrystalDecisions.ReportAppServer.CommonObjectModel.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.ObjectFactory"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.ObjectFactory\$(CrVer)\CrystalDecisions.ReportAppServer.ObjectFactory.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="CrystalDecisions.ReportAppServer.CommLayer"><HintPath>$(CrGacMsil)\CrystalDecisions.ReportAppServer.CommLayer\$(CrVer)\CrystalDecisions.ReportAppServer.CommLayer.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

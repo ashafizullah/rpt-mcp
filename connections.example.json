@@ -1,0 +1,4 @@
+{
+  "dev": { "server": "localhost\\SQLEXPRESS", "database": "Northwind", "integrated": true },
+  "prod": { "server": "db.example.local", "database": "Sales", "user": "report_user", "password": "change-me" }
+}
