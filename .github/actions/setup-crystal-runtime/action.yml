@@ -41,7 +41,18 @@ runs:
         Write-Output "Installing $($msi.Name)"
         $p = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v `"$dir\install.log`"" -Wait -PassThru
         if ($p.ExitCode -notin 0, 3010) { Get-Content "$dir\install.log" -Tail 60; throw "msiexec exited with $($p.ExitCode)" }
-        $engine = Join-Path $env:WINDIR "assembly\GAC_MSIL\CrystalDecisions.CrystalReports.Engine"
-        if (-not (Test-Path $engine)) { throw "Crystal runtime assemblies not found in the GAC after install" }
-        Get-ChildItem $engine | ForEach-Object { Write-Output "Engine assembly: $($_.Name)" }
+        # Older SPs install into the legacy GAC, newer ones into the .NET 4 GAC (folders named v4.0_<version>__<token>).
+        $roots = @((Join-Path $env:WINDIR "assembly\GAC_MSIL"), (Join-Path $env:WINDIR "Microsoft.NET\assembly\GAC_MSIL"))
+        $found = $false
+        foreach ($root in $roots) {
+          $engine = Join-Path $root "CrystalDecisions.CrystalReports.Engine"
+          if (Test-Path $engine) {
+            $found = $true
+            Get-ChildItem $engine | ForEach-Object { Write-Output "Engine assembly: $root\...\$($_.Name)" }
+          }
+        }
+        if (-not $found) {
+          Get-ChildItem -Path $roots -Filter "CrystalDecisions*" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Output $_.FullName }
+          throw "Crystal runtime assemblies not found in either GAC after install"
+        }
         "installed=true" >> $env:GITHUB_OUTPUT

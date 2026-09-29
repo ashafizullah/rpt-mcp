@@ -12,15 +12,39 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.1.0</Version>
-    <CrGacMsil Condition="'$(CrGacMsil)' == ''">C:\Windows\assembly\GAC_MSIL</CrGacMsil>
   </PropertyGroup>
 
-  <!-- Crystal runtime SPs install their assemblies as 13.0.2000.0 (older) or 13.0.4000.0 (newer); use whichever is present. -->
-  <PropertyGroup Condition="'$(CrVer)' == ''">
-    <CrVer Condition="Exists('$(CrGacMsil)\CrystalDecisions.CrystalReports.Engine\13.0.2000.0__692fbea5521e1304')">13.0.2000.0__692fbea5521e1304</CrVer>
-    <CrVer Condition="'$(CrVer)' == '' and Exists('$(CrGacMsil)\CrystalDecisions.CrystalReports.Engine\13.0.4000.0__692fbea5521e1304')">13.0.4000.0__692fbea5521e1304</CrVer>
-    <CrVer Condition="'$(CrVer)' == ''">13.0.2000.0__692fbea5521e1304</CrVer>
+  <!--
+    Where the Crystal assemblies live depends on the runtime SP: older SPs use the legacy GAC with 13.0.2000.0
+    (folder "13.0.2000.0__<token>"), newer SPs the .NET 4 GAC with 13.0.4000.0 (folder "v4.0_13.0.4000.0__<token>").
+    Override with -p:CrGacMsil=... -p:CrVer=... if yours are elsewhere.
+  -->
+  <PropertyGroup>
+    <CrLegacyGac>$(WINDIR)\assembly\GAC_MSIL</CrLegacyGac>
+    <CrNet4Gac>$(WINDIR)\Microsoft.NET\assembly\GAC_MSIL</CrNet4Gac>
+    <CrEngine>CrystalDecisions.CrystalReports.Engine</CrEngine>
+    <CrToken>692fbea5521e1304</CrToken>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(CrGacMsil)' == '' and '$(CrVer)' == ''">
+    <CrGacMsil Condition="Exists('$(CrLegacyGac)\$(CrEngine)\13.0.2000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
+    <CrVer Condition="'$(CrGacMsil)' != ''">13.0.2000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrLegacyGac)\$(CrEngine)\13.0.4000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">13.0.4000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrNet4Gac)\$(CrEngine)\v4.0_13.0.4000.0__$(CrToken)')">$(CrNet4Gac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">v4.0_13.0.4000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrNet4Gac)\$(CrEngine)\v4.0_13.0.2000.0__$(CrToken)')">$(CrNet4Gac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">v4.0_13.0.2000.0__$(CrToken)</CrVer>
+  </PropertyGroup>
+  <PropertyGroup>
+    <CrGacMsil Condition="'$(CrGacMsil)' == ''">$(CrLegacyGac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == ''">13.0.2000.0__$(CrToken)</CrVer>
+  </PropertyGroup>
+
+  <Target Name="ShowCrystalReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Message Importance="high" Text="Crystal assemblies: $(CrGacMsil)\...\$(CrVer)" />
+    <Error Condition="!Exists('$(CrGacMsil)\$(CrEngine)\$(CrVer)\$(CrEngine).dll')"
+           Text="SAP Crystal Reports runtime assemblies not found ($(CrGacMsil)\$(CrEngine)\$(CrVer)). Install the runtime, or pass -p:CrGacMsil=... -p:CrVer=..." />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
