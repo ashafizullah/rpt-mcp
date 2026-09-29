@@ -55,4 +55,11 @@ runs:
           Get-ChildItem -Path $roots -Filter "CrystalDecisions*" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Output $_.FullName }
           throw "Crystal runtime assemblies not found in either GAC after install"
         }
+        # Show where the report-modification (RAS) assemblies landed; they are 64-bit only in some SPs.
+        foreach ($gac in "GAC_MSIL", "GAC_64") {
+          foreach ($base in (Join-Path $env:WINDIR "assembly\$gac"), (Join-Path $env:WINDIR "Microsoft.NET\assembly\$gac")) {
+            $ras = Join-Path $base "CrystalDecisions.ReportAppServer.DataDefModel"
+            if (Test-Path $ras) { Get-ChildItem $ras | ForEach-Object { Write-Output "RAS assembly: $base\...\$($_.Name)" } }
+          }
+        }
         "installed=true" >> $env:GITHUB_OUTPUT
