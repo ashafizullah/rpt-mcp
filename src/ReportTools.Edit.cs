@@ -40,6 +40,13 @@ namespace RptMcp
         {
             if (!(a["operations"] is JArray ops) || ops.Count == 0) throw new ToolError("operations must be a non-empty array.");
             if (_batchDoc != null) throw new ToolError("batch_edit cannot be nested.");
+            // Validate the whole list before opening the report.
+            for (int i = 0; i < ops.Count; i++)
+            {
+                if (!(ops[i] is JObject o)) throw new ToolError($"Operation {i + 1} is not an object.");
+                if (!EditTools.Contains((string)o["tool"]))
+                    throw new ToolError($"Operation {i + 1}: '{(string)o["tool"]}' is not an edit tool. Allowed: {string.Join(", ", EditTools)}.");
+            }
 
             return ReportIO.With((string)a["path"], rd =>
             {
@@ -49,11 +56,8 @@ namespace RptMcp
                 {
                     for (int i = 0; i < ops.Count; i++)
                     {
-                        if (!(ops[i] is JObject op)) throw new ToolError($"Operation {i + 1} is not an object.");
+                        var op = (JObject)ops[i];
                         var tool = (string)op["tool"];
-                        if (!EditTools.Contains(tool))
-                            throw new ToolError($"Operation {i + 1}: '{tool}' is not an edit tool. Allowed: {string.Join(", ", EditTools)}.");
-
                         var args = (JObject)op.DeepClone();
                         args.Remove("tool");
                         args.Remove("output_path");

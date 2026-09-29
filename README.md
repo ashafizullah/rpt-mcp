@@ -1,5 +1,11 @@
 # rpt-mcp
 
+[![CI](https://github.com/ashafizullah/rpt-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ashafizullah/rpt-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ashafizullah/rpt-mcp)](https://github.com/ashafizullah/rpt-mcp/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-server-blue)](https://modelcontextprotocol.io)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20.NET%20Framework%204.8-lightgrey)
+
 **An MCP server for SAP Crystal Reports `.rpt` files.**
 
 An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude Code, Claude Desktop, Cursor, …) **read and edit SAP Crystal Reports `.rpt` files**.
@@ -62,6 +68,8 @@ dotnet build -c Release
 The project references the Crystal assemblies from the GAC (`C:\Windows\assembly\GAC_MSIL`). If yours are elsewhere, override with `dotnet build -p:CrGacMsil=<folder>`.
 
 For a 32-bit Crystal runtime, build with `-p:PlatformTarget=x86`.
+
+Run the tests with `dotnet test RptMcp.sln -c Release`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the report tests.
 
 ## Register with an MCP client
 

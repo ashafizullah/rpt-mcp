@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: crystal
+        uses: ./.github/actions/setup-crystal-runtime
+        with:
+          repo: ${{ vars.CR_RUNTIME_REPO }}
+          token: ${{ secrets.CR_RUNTIME_TOKEN }}
+
+      - name: Build
+        if: steps.crystal.outputs.installed == 'true'
+        run: dotnet build RptMcp.sln -c Release
+
+      - name: Test
+        if: steps.crystal.outputs.installed == 'true'
+        run: dotnet test RptMcp.sln -c Release --no-build --logger "console;verbosity=normal"

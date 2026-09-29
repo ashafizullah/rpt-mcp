@@ -4,3 +4,4 @@ obj/
 *.user
 connections.json
 _rptmcp_backup/
+TestResults/

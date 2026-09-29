@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build, e.g. v0.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - id: crystal
+        uses: ./.github/actions/setup-crystal-runtime
+        with:
+          repo: ${{ vars.CR_RUNTIME_REPO }}
+          token: ${{ secrets.CR_RUNTIME_TOKEN }}
+
+      - name: Require the runtime
+        if: steps.crystal.outputs.installed != 'true'
+        run: throw "Releases need the Crystal Reports runtime; configure CR_RUNTIME_REPO and CR_RUNTIME_TOKEN."
+        shell: pwsh
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          dotnet build RptMcp.sln -c Release -p:Version=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet test RptMcp.sln -c Release --no-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "rpt-mcp"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item src/bin/Release/rpt-mcp.exe, src/bin/Release/rpt-mcp.exe.config, src/bin/Release/Newtonsoft.Json.dll $stage
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md, CHANGELOG.md, connections.example.json $stage
+          # Never ship SAP assemblies.
+          if (Get-ChildItem $stage -Filter "CrystalDecisions*") { throw "SAP assemblies must not be packaged" }
+          $zip = "rpt-mcp-$env:TAG-win-x64.zip"
+          Compress-Archive -Path $stage -DestinationPath $zip -Force
+          "ZIP=$zip" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG $env:ZIP --clobber
+          } else {
+            gh release create $env:TAG $env:ZIP --title "rpt-mcp $env:TAG" --generate-notes
+          }

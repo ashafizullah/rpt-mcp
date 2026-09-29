@@ -1,0 +1,45 @@
+name: Set up SAP Crystal Reports runtime
+description: >
+  Installs the SAP Crystal Reports runtime for .NET Framework (x64). SAP's download requires an interactive
+  login, so the MSI is taken from a release of a PRIVATE repository you control (it is never published).
+  If repo/token are not configured (e.g. pull requests from forks) the step reports installed=false instead of failing.
+
+inputs:
+  repo:
+    description: Private repository (owner/name) whose latest release has the runtime MSI (*64*.msi) as an asset.
+    required: false
+  token:
+    description: Token with read access to that repository.
+    required: false
+
+outputs:
+  installed:
+    description: "'true' when the runtime is installed."
+    value: ${{ steps.install.outputs.installed }}
+
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        CR_REPO: ${{ inputs.repo }}
+      run: |
+        if (-not $env:CR_REPO -or -not $env:GH_TOKEN) {
+          Write-Output "::warning::Crystal Reports runtime not configured (variable CR_RUNTIME_REPO / secret CR_RUNTIME_TOKEN); build and tests are skipped."
+          "installed=false" >> $env:GITHUB_OUTPUT
+          exit 0
+        }
+        $dir = Join-Path $env:RUNNER_TEMP "crruntime"
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        gh release download --repo $env:CR_REPO --pattern "*64*.msi" --dir $dir --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Could not download the runtime MSI from $env:CR_REPO" }
+        $msi = Get-ChildItem $dir -Filter *.msi | Select-Object -First 1
+        Write-Output "Installing $($msi.Name)"
+        $p = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v `"$dir\install.log`"" -Wait -PassThru
+        if ($p.ExitCode -notin 0, 3010) { Get-Content "$dir\install.log" -Tail 60; throw "msiexec exited with $($p.ExitCode)" }
+        $engine = Join-Path $env:WINDIR "assembly\GAC_MSIL\CrystalDecisions.CrystalReports.Engine"
+        if (-not (Test-Path $engine)) { throw "Crystal runtime assemblies not found in the GAC after install" }
+        Get-ChildItem $engine | ForEach-Object { Write-Output "Engine assembly: $($_.Name)" }
+        "installed=true" >> $env:GITHUB_OUTPUT

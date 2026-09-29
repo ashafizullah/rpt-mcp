@@ -1,0 +1,37 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: The tool you called, the arguments, and the error or wrong result.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: rptmcp
+    attributes:
+      label: rpt-mcp version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Crystal Reports runtime version / SP
+      description: e.g. 13.0.36 (SP36), x64
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Code / Claude Desktop / Cursor / …
+  - type: markdown
+    attributes:
+      value: Please do not attach confidential reports. A minimal .rpt that reproduces the problem helps a lot.

@@ -12,8 +12,14 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.1.0</Version>
-    <CrGacMsil>C:\Windows\assembly\GAC_MSIL</CrGacMsil>
-    <CrVer>13.0.2000.0__692fbea5521e1304</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == ''">C:\Windows\assembly\GAC_MSIL</CrGacMsil>
+  </PropertyGroup>
+
+  <!-- Crystal runtime SPs install their assemblies as 13.0.2000.0 (older) or 13.0.4000.0 (newer); use whichever is present. -->
+  <PropertyGroup Condition="'$(CrVer)' == ''">
+    <CrVer Condition="Exists('$(CrGacMsil)\CrystalDecisions.CrystalReports.Engine\13.0.2000.0__692fbea5521e1304')">13.0.2000.0__692fbea5521e1304</CrVer>
+    <CrVer Condition="'$(CrVer)' == '' and Exists('$(CrGacMsil)\CrystalDecisions.CrystalReports.Engine\13.0.4000.0__692fbea5521e1304')">13.0.4000.0__692fbea5521e1304</CrVer>
+    <CrVer Condition="'$(CrVer)' == ''">13.0.2000.0__692fbea5521e1304</CrVer>
   </PropertyGroup>
 
   <ItemGroup>
