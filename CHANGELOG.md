@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- `initialize` reported the server version as 0.1.0 regardless of the release; it now reports the build's version.
+
 ## [0.1.1] - 2026-09-29
 
 ### Fixed

@@ -16,6 +16,8 @@ namespace RptMcp.Tests
             {
                 var result = (JObject)c.Initialize["result"];
                 Assert.Equal("rpt-mcp", (string)result["serverInfo"]["name"]);
+                var version = System.Diagnostics.FileVersionInfo.GetVersionInfo(McpClient.ServerPath);
+                Assert.Equal($"{version.FileMajorPart}.{version.FileMinorPart}.{version.FileBuildPart}", (string)result["serverInfo"]["version"]);
                 Assert.Equal("2025-06-18", (string)result["protocolVersion"]);
                 Assert.NotNull(result["capabilities"]["tools"]);
             }

@@ -13,6 +13,10 @@ namespace RptMcp
     internal static class Program
     {
         private const string ServerName = "rpt-mcp";
+
+        /// <summary>The &lt;Version&gt; from the project file (set per release from the git tag).</summary>
+        private static readonly string ServerVersion =
+            typeof(Program).Assembly.GetName().Version is Version v ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
         private static TextWriter _out;
 
         [STAThread]
@@ -77,7 +81,7 @@ namespace RptMcp
                     {
                         ["protocolVersion"] = (string)p["protocolVersion"] ?? "2025-06-18",
                         ["capabilities"] = new JObject { ["tools"] = new JObject { ["listChanged"] = false } },
-                        ["serverInfo"] = new JObject { ["name"] = ServerName, ["version"] = "0.1.0" },
+                        ["serverInfo"] = new JObject { ["name"] = ServerName, ["version"] = ServerVersion },
                         ["instructions"] =
                             "Edit SAP Crystal Reports (.rpt) files through the Crystal Reports runtime. " +
                             "Always call inspect_report first to learn object, section, formula and table names. " +
