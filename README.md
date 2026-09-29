@@ -45,7 +45,13 @@ All tools accept `subreport` to work inside a subreport.
 - **SAP Crystal Reports runtime for .NET Framework (v13, 64-bit)**, or *SAP Crystal Reports for Visual Studio* (SP 20+ recommended). Download it free from SAP. The runtime is proprietary SAP software and is **not** included in this repository.
 - To build from source: .NET SDK 6+ (it builds `net48`).
 
-## Build
+## Install
+
+1. Install the SAP Crystal Reports runtime (see Requirements).
+2. Download `rpt-mcp-<version>-win-x64.zip` from [Releases](https://github.com/ashafizullah/rpt-mcp/releases) and unzip it anywhere, e.g. `C:\Tools\rpt-mcp`.
+3. Register `rpt-mcp.exe` with your MCP client (see below).
+
+## Build from source
 
 ```powershell
 cd src
