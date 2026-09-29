@@ -6,7 +6,7 @@ description: >
 
 inputs:
   repo:
-    description: Private repository (owner/name) whose latest release has the runtime MSI (*64*.msi) as an asset.
+    description: Private repository (owner/name) whose latest release has the 64-bit runtime MSI (name containing "64") as an asset.
     required: false
   token:
     description: Token with read access to that repository.
@@ -33,9 +33,11 @@ runs:
         }
         $dir = Join-Path $env:RUNNER_TEMP "crruntime"
         New-Item -ItemType Directory -Force $dir | Out-Null
-        gh release download --repo $env:CR_REPO --pattern "*64*.msi" --dir $dir --clobber
+        # SAP names the file e.g. CR13SP36MSI64_0-80007712.MSI; the pattern is case-sensitive, so filter afterwards.
+        gh release download --repo $env:CR_REPO --pattern "*64*" --dir $dir --clobber
         if ($LASTEXITCODE -ne 0) { throw "Could not download the runtime MSI from $env:CR_REPO" }
-        $msi = Get-ChildItem $dir -Filter *.msi | Select-Object -First 1
+        $msi = Get-ChildItem $dir | Where-Object { $_.Extension -ieq ".msi" } | Select-Object -First 1
+        if (-not $msi) { throw "No 64-bit .msi asset in the latest release of $env:CR_REPO" }
         Write-Output "Installing $($msi.Name)"
         $p = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v `"$dir\install.log`"" -Wait -PassThru
         if ($p.ExitCode -notin 0, 3010) { Get-Content "$dir\install.log" -Tail 60; throw "msiexec exited with $($p.ExitCode)" }
