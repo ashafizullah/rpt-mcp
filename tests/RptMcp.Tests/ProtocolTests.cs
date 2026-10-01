@@ -47,7 +47,7 @@ namespace RptMcp.Tests
                 foreach (var expected in new[] { "inspect_report", "batch_edit", "set_field_format", "export_report", "replace_picture", "add_table",
                                                  "add_group", "delete_group", "add_sort", "delete_sort", "add_running_total", "delete_running_total",
                                                  "set_parameter", "set_text_with_fields", "add_section", "delete_section", "move_object",
-                                                 "set_page_setup", "verify_database" })
+                                                 "set_page_setup", "verify_database", "add_subreport", "set_subreport_links" })
                     Assert.Contains(expected, names);
             }
         }

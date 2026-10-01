@@ -32,7 +32,7 @@ namespace RptMcp
             "set_formula", "delete_formula", "set_selection_formula", "add_parameter", "set_parameter", "delete_parameter",
             "add_group", "delete_group", "add_sort", "delete_sort", "add_running_total", "delete_running_total",
             "set_command_sql", "add_table", "set_datasource", "remove_table", "set_text", "set_text_with_fields", "set_object_props",
-            "set_section_props", "add_section", "delete_section", "move_object", "set_page_setup",
+            "set_section_props", "add_section", "delete_section", "move_object", "set_page_setup", "add_subreport", "set_subreport_links",
             "add_text_object", "add_field_object", "delete_object",
             "set_field_format", "set_condition_formula", "add_line", "add_box", "add_picture", "replace_picture"
         };
@@ -261,6 +261,8 @@ namespace RptMcp
                     values.Add(new DD.ParameterFieldDiscreteValue { Value = ConvertValue((string)d, type) });
                 pf.DefaultValues = values;
             }
+            // A subreport's parameter controller refuses parameters without the subreport's name.
+            if (Sub(a) != null) pf.ReportName = Sub(a);
             ras.DataDef.ParameterFieldController.Add(pf);
             return new JObject { ["parameter"] = name, ["action"] = "created" };
         });
@@ -319,6 +321,7 @@ namespace RptMcp
             }
             if (done.Count == 0) throw new ToolError("Nothing to change: pass prompt, type, allow_multiple or default_values.");
 
+            if (Sub(a) != null) p.ReportName = Sub(a);
             ras.DataDef.ParameterFieldController.Modify(old, p);
             var now = (DD.ParameterField)ras.DataDef.DataDefinition.ParameterFields.Cast<DD.ISCRField>().First(x => Eq(x.Name, name));
             return new JObject

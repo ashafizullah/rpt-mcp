@@ -408,6 +408,7 @@ namespace RptMcp
         {
             var ras = Ras.For(main, Sub(a));
             var obj = ras.Object((string)a["object"]);
+            if (obj is RD.SubreportObject) throw new ToolError($"'{obj.Name}' is a subreport; Crystal cannot move subreport objects. Use set_object_props to reposition it within its section.");
             var target = ras.Section((string)a["section"]);
             var from = obj.SectionName;
             if (Eq(from, target.Name)) throw new ToolError($"'{obj.Name}' is already in {target.Name}; use set_object_props to change its position.");

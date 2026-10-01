@@ -40,6 +40,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude
 | `set_section_props` | Section height, suppress, page breaks, keep-together, background |
 | `add_section` / `delete_section` | Add a section (e.g. a second Detail) or delete one (guarded while it holds objects) |
 | `move_object` | Move an object to another section, keeping its name, font, format and conditional formulas |
+| `add_subreport` / `set_subreport_links` | Insert another `.rpt` as a subreport and link it: main parameter → subreport parameter, or main field → subreport field (filters the subreport, e.g. per group) |
 | `set_page_setup` | Paper size (A4, Letter, Legal, … or custom), orientation and margins; returns the printable width |
 | `add_text_object` / `add_field_object` / `delete_object` | Add or remove report objects; field objects can also show special fields (`RecordNumber`, `PageNumber`, `TotalPageCount`, `PageNofM`, `PrintDate`, `GroupNumber`, `FileName`…) |
 | `verify_database` | Check the report against its database: columns that no longer exist (and what uses them), changed types, logon/provider problems. Never saves |
@@ -120,6 +121,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 - "Point every table in all reports under `C:\reports` to server `SQL02`, database `SalesProd`."
 - "Add table `dbo.Orders` from `(localdb)\MSSQLLocalDB`, database `Sales`, to the blank `Orders.rpt` and put `OrderNo` and `Total` in the details section."
 - "Group the production report by shift, show *Shift : n* in the group header and Qty/Good/Reject subtotals in the group footer."
+- "Add a per-product summary as a subreport in the report footer, linked to the report's date and shift parameters."
 - "Make the report A4 landscape and number the rows with RecordNumber."
 - "Export Invoice.rpt to PDF with `OrderNo = 1001` so I can check the layout."
 
@@ -134,6 +136,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 - Charts, cross-tabs and OLAP grids can be inspected and moved, but not structurally edited.
 - Line styles: the runtime rejects `double`, and draws `dashed`/`dotted` lines as hairlines. Pictures are stored as bitmaps (transparency is flattened to white).
 - Field objects bound directly to a running total cannot be saved by the runtime (`SaveAs` fails with "No error"), so `add_field_object` shows `{#Name}` through a formula `{@Name}` whose text is `{#Name}`. `delete_running_total` removes that formula too.
+- The runtime cannot create an empty report, so a new subreport is built as its own `.rpt` first (e.g. copy a report and trim it with these tools) and inserted with `add_subreport`. Subreport objects cannot be moved to another section; insert them where they belong.
 - Default parameter values are the choices offered in the prompt; `export_report` still needs the values passed in `parameters`.
 - `set_command_sql` and `set_datasource` go through Crystal's table-location API, which connects to the database to validate the schema.
 - Tested with Crystal Reports runtime 13.0.2000 (x64) on Windows 11 and SQL Server LocalDB.
