@@ -1,7 +1,7 @@
 <#
   Builds rpt-mcp-<version>.mcpb (an MCP Bundle: a zip with manifest.json at the root) from a Release build.
   The tool list in the manifest is read from the server itself (tools/list), so it never goes stale.
-  Usage: pwsh build/make-mcpb.ps1 -Version 0.1.3 [-OutDir dist]
+  Usage: pwsh build/make-mcpb.ps1 -Version 0.1.4 [-OutDir dist]
 #>
 param(
   [Parameter(Mandatory)] [string] $Version,

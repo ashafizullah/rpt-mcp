@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-01
+
 ### Added
 - **`add_group` / `delete_group`**: group a report on a field (with date grouping per day/week/month/… and ascending/descending order). Crystal adds the group header and footer sections, named after the field (e.g. `ShiftHeaderSection1`); the tool returns them. `delete_group` refuses while those sections hold objects or formulas/running totals summarize per the group, unless `force`.
 - **`add_sort` / `delete_sort`**: record sorts. `add_sort` on a field that is already sorted (including a group's field) changes the direction.
@@ -60,7 +62,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas, parameters, data sources, field formats, conditional formulas, lines, boxes, pictures), with backups, usage guards, `batch_edit` and `export_report`.
 
-[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.0...v0.1.1

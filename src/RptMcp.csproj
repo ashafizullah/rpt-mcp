@@ -11,7 +11,7 @@
     <AssemblyName>rpt-mcp</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <!-- Do not embed local build paths (e.g. in the PDB path) in released binaries. -->
     <PathMap>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..'))=/_/</PathMap>
     <Deterministic>true</Deterministic>
