@@ -194,6 +194,17 @@ namespace RptMcp
             var ras = Ras.For(main, Sub(a));
             var path = (string)a["condition"];
             var text = (string)a["formula"] ?? "";
+            if (a["section"] != null)
+            {
+                if (a["object"] != null) throw new ToolError("Pass object or section, not both.");
+                // Section conditions (e.g. Format.EnableSuppress = suppress the whole section) live on its SectionFormat.
+                var section = ras.Section((string)a["section"]);
+                var copy = (RD.Section)section.Clone(true);
+                var done = Conditions.Set(copy, typeof(RD.Section), path, text);
+                ras.ReportDef.ReportSectionController.SetProperty(section, CrystalDecisions.ReportAppServer.Controllers.CrReportSectionPropertyEnum.crReportSectionPropertyFormat, copy.Format);
+                return new JObject { ["section"] = section.Name, ["condition"] = done, ["action"] = text.Length == 0 ? "cleared" : "set" };
+            }
+            if (a["object"] == null) throw new ToolError("object or section is required.");
             var obj = ras.Object((string)a["object"]);
             var clone = (RD.ISCRReportObject)obj.Clone(true);
             var set = Conditions.Set(clone, Ras.DeclaredType(obj), path, text);

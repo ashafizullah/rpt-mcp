@@ -345,11 +345,13 @@ namespace RptMcp
                 SetFieldFormat);
 
             r.Add("set_condition_formula",
-                "Set or clear (empty formula) a conditional formula on a report object, e.g. suppress when a value is empty. " +
+                "Set or clear (empty formula) a conditional formula on a report object or a section, e.g. suppress when a value is empty. " +
                 "condition uses the same paths inspect_report shows: Format.EnableSuppress, Format.DisplayString, Format.HorizontalAlignment, " +
                 "Format.ToolTipText, Format.Hyperlink, FontColor.Color, FontColor.Style, FontColor.Size, Border.BackgroundColor, Border.BorderColor, " +
-                "FieldFormat.NumericFormat.NDecimalPlaces, FieldFormat.CommonFormat.SuppressIfDuplicated, …",
-                Schema(PathArg, Req("object", "string", "Object name."),
+                "FieldFormat.NumericFormat.NDecimalPlaces, FieldFormat.CommonFormat.SuppressIfDuplicated, …; for a section e.g. Format.EnableSuppress, " +
+                "Format.EnableNewPageBefore, Format.BackgroundColor. Crystal ignores conditional suppress on lines and boxes: suppress their section instead.",
+                Schema(PathArg, Opt("object", "string", "Object name (or give section)."),
+                       Opt("section", "string", "Section name, to set a condition on the section itself."),
                        Req("condition", "string", "Condition path, e.g. Format.EnableSuppress."),
                        Req("formula", "string", "Crystal formula, e.g. IsNull({T.Col}) or {T.Col} = \"\". Use crRed etc. for colors. \"\" clears it."),
                        SubArg, OutArg),
@@ -404,12 +406,16 @@ namespace RptMcp
                 VerifyDatabase);
 
             r.Add("export_report",
-                "Run the report against the database and export it (PDF is best for visually checking a change). " +
+                "Run the report against the database and export it. To visually check a layout change, export to png and open the image: " +
+                "a single page is written to output_path, several pages to <name>-<page>.png next to it. " +
                 "Parameter values: {\"Name\": value} or {\"Name\": [v1, v2]}; for an unlinked subreport parameter use \"Subreport::Name\".",
                 Schema(new[]
                 {
                     PathArg, Req("output_path", "string", "Output file."),
-                    Enum("format", "Export format (default pdf).", false, "pdf", "xlsx", "xls", "xls_data", "doc", "rtf", "csv", "txt", "rpt"),
+                    Enum("format", "Export format (default pdf). png/jpg render the pages as images.", false,
+                         "pdf", "xlsx", "xls", "xls_data", "doc", "rtf", "csv", "txt", "rpt", "png", "jpg"),
+                    Opt("dpi", "integer", "png/jpg only: resolution, 36-600 (default 150)."),
+                    Opt("pages", "string", "png/jpg only: pages to render, e.g. \"1\", \"1-3\" or \"1,3\" (default all)."),
                     Opt("parameters", "object", "Parameter values by name."),
                     Opt("data", "object",
                         "Rows to use instead of querying the database (for DataSet/XML-based reports or quick previews): " +

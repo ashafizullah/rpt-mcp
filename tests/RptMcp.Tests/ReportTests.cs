@@ -293,8 +293,64 @@ namespace RptMcp.Tests
             }
         }
 
+        [SkippableFact]
+        public void Condition_formula_on_a_section_round_trips()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var section = ((JObject)c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"]).Properties().First().Name;
+                var r = c.CallOk("set_condition_formula", new JObject { ["path"] = _report, ["section"] = section, ["condition"] = "Format.EnableSuppress", ["formula"] = "PageNumber > 1" });
+                Assert.Equal(section, (string)r["section"]);
+                var conds = c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"][section]["conditions"];
+                Assert.Equal("PageNumber > 1", (string)conds["Format.EnableSuppress"]);
+
+                c.CallOk("set_condition_formula", new JObject { ["path"] = _report, ["section"] = section, ["condition"] = "Format.EnableSuppress", ["formula"] = "" });
+                Assert.Null(c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"][section]["conditions"]?["Format.EnableSuppress"]);
+
+                // A set_formula without text must not silently create an empty formula.
+                var (isError, _) = c.Call("set_formula", new JObject { ["path"] = _report, ["name"] = "RptMcpNoText", ["formula"] = "1" });
+                Assert.True(isError);
+            }
+        }
+
+        [SkippableFact]
+        public void Export_to_png_and_jpg_renders_pages()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var png = Path.Combine(_dir, "page.png");
+                var r = c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = png, ["pages"] = "1", ["parameters"] = DefaultParameters(c) });
+                Assert.Equal(png, (string)((JArray)r["exported"]).Single());
+                var bytes = File.ReadAllBytes(png);
+                Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, bytes.Take(4));
+                var width = (int)r["pages"][0]["width_px"];
+
+                var hi = c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = Path.Combine(_dir, "hi.png"), ["pages"] = "1", ["dpi"] = 300, ["parameters"] = DefaultParameters(c) });
+                Assert.InRange((int)hi["pages"][0]["width_px"], width * 2 - 2, width * 2 + 2);
+
+                var jpg = Path.Combine(_dir, "page.jpg");
+                c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "jpg", ["output_path"] = jpg, ["pages"] = "1", ["parameters"] = DefaultParameters(c) });
+                Assert.Equal(new byte[] { 0xFF, 0xD8 }, File.ReadAllBytes(jpg).Take(2));
+
+                // All pages: one file per page, named <name>-<page>.png.
+                var all = c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = Path.Combine(_dir, "all.png"), ["parameters"] = DefaultParameters(c) });
+                var total = (int)all["total_pages"];
+                Assert.Equal(total, ((JArray)all["exported"]).Count);
+                if (total > 1) Assert.True(File.Exists(Path.Combine(_dir, "all-2.png")));
+
+                var (isError, text) = c.Call("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = png, ["pages"] = "999", ["parameters"] = DefaultParameters(c) });
+                Assert.True(isError);
+                Assert.Contains("out of range", text);
+            }
+        }
+
         /// <summary>Exports to CSV, giving every prompting parameter its first default value (or a value of its type).</summary>
-        private void ExportCsv(McpClient c, string csv)
+        private void ExportCsv(McpClient c, string csv) =>
+            c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "csv", ["output_path"] = csv, ["parameters"] = DefaultParameters(c) });
+
+        private JObject DefaultParameters(McpClient c)
         {
             var values = new JObject();
             foreach (var p in ((JObject)c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_objects"] = false })["parameters"]).Properties())
@@ -308,7 +364,7 @@ namespace RptMcp.Tests
                     default: values[p.Name] = def ?? ""; break;
                 }
             }
-            c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "csv", ["output_path"] = csv, ["parameters"] = values });
+            return values;
         }
 
         /// <summary>Adds the RPTMCP_TEST_DB_* table to the report and returns its fields as {Alias.Column}:Type.</summary>

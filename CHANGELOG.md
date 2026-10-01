@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`export_report` to `png` / `jpg`**: renders the report pages as images (the Crystal runtime cannot export images, so it exports a temporary PDF and renders it with the PDF renderer built into Windows). `dpi` (default 150) and `pages` (`"1"`, `"1-3"`, `"1,3"`) choose what to render; one page goes to `output_path`, several to `<name>-<page>.png`. The result lists each page's pixel size. Lets an agent check a layout change itself.
+- **`set_condition_formula` on sections**: pass `section` instead of `object`, e.g. `Format.EnableSuppress` to hide a page header once the table has ended. Crystal ignores conditional suppress on lines and boxes, so suppressing their section is the way to hide them.
+
+### Fixed
+- `set_formula` without `text` (e.g. a misnamed argument) silently created or blanked the formula; it is now an error.
+
 ## [0.1.5] - 2026-10-01
 
 ### Added

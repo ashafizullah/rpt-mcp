@@ -51,6 +51,8 @@
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- WinRT projections (build-time only) for Windows.Data.Pdf, which renders pages for png/jpg export. -->
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.19041.2" />
     <Reference Include="System.Drawing" />
   </ItemGroup>
 

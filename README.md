@@ -44,7 +44,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude
 | `set_page_setup` | Paper size (A4, Letter, Legal, … or custom), orientation and margins; returns the printable width |
 | `add_text_object` / `add_field_object` / `delete_object` | Add or remove report objects; field objects can also show special fields (`RecordNumber`, `PageNumber`, `TotalPageCount`, `PageNofM`, `PrintDate`, `GroupNumber`, `FileName`…) |
 | `verify_database` | Check the report against its database: columns that no longer exist (and what uses them), changed types, logon/provider problems. Never saves |
-| `export_report` | Run the report and export to PDF/Excel/Word/CSV/… (useful to visually verify edits). Rows can be passed inline (`data`) for DataSet/XML-based reports or quick previews without a database |
+| `export_report` | Run the report and export to PDF/Excel/Word/CSV/… or to PNG/JPG images (one per page, choose `dpi` and `pages`) so an agent can look at the layout itself. Image export renders through the PDF renderer built into Windows 10 / Server 2016+; PNG keeps text sharper and smaller than JPG. Rows can be passed inline (`data`) for DataSet/XML-based reports or quick previews without a database |
 
 Positions and sizes are in **twips** (1440 = 1 inch, 567 ≈ 1 cm), Crystal's native unit.
 
@@ -124,6 +124,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 - "Add a per-product summary as a subreport in the report footer, linked to the report's date and shift parameters."
 - "Make the report A4 landscape and number the rows with RecordNumber."
 - "Export Invoice.rpt to PDF with `OrderNo = 1001` so I can check the layout."
+- "Export page 1 of Invoice.rpt to PNG, look at it, and fix any overlapping columns."
 
 ## Tips
 

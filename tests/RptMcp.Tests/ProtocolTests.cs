@@ -53,6 +53,20 @@ namespace RptMcp.Tests
         }
 
         [Fact]
+        public void Export_report_offers_image_formats()
+        {
+            using (var c = new McpClient())
+            {
+                var tool = ((JArray)c.Request("tools/list")["result"]["tools"]).First(t => (string)t["name"] == "export_report");
+                var props = (JObject)tool["inputSchema"]["properties"];
+                var formats = props["format"]["enum"].Select(f => (string)f).ToList();
+                foreach (var f in new[] { "pdf", "csv", "png", "jpg" }) Assert.Contains(f, formats);
+                Assert.Equal("integer", (string)props["dpi"]["type"]);
+                Assert.Equal("string", (string)props["pages"]["type"]);
+            }
+        }
+
+        [Fact]
         public void Unknown_method_returns_method_not_found()
         {
             using (var c = new McpClient())

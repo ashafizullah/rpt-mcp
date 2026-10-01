@@ -15,7 +15,10 @@ namespace RptMcp
         private static JToken ExportReport(JObject a)
         {
             var output = Path.GetFullPath(Environment.ExpandEnvironmentVariables((string)a["output_path"] ?? throw new ToolError("output_path is required")));
-            var format = ExportFormat((string)a["format"]);
+            var image = (string)a["format"] is string f && (Eq(f, "png") || Eq(f, "jpg")) ? f.ToLowerInvariant() : null;
+            var format = image != null ? ExportFormatType.PortableDocFormat : ExportFormat((string)a["format"]);
+            var dpi = (int?)a["dpi"] ?? 150;
+            if (image != null && (dpi < 36 || dpi > 600)) throw new ToolError("dpi must be between 36 and 600.");
 
             return ReportIO.With((string)a["path"], rd =>
             {
@@ -31,19 +34,39 @@ namespace RptMcp
                         SetParameter(rd, p.Name, p.Value);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(output));
+                if (image == null)
+                {
+                    ExportToDisk(rd, format, output);
+                    return new JObject { ["exported"] = output, ["format"] = format.ToString(), ["size_kb"] = Math.Round(new FileInfo(output).Length / 1024.0, 1) };
+                }
+
+                // The runtime cannot export images: export a temporary PDF and render its pages.
+                var pdf = Path.Combine(Path.GetTempPath(), "rptmcp-" + Guid.NewGuid().ToString("N") + ".pdf");
                 try
                 {
-                    rd.ExportToDisk(format, output);
+                    ExportToDisk(rd, format, pdf);
+                    return RasterizePdf(pdf, output, image == "jpg", dpi, (string)a["pages"]);
                 }
-                catch (Exception ex) when (ex.Message.IndexOf("parameter", StringComparison.OrdinalIgnoreCase) >= 0)
+                finally
                 {
-                    var needed = rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()
-                        .Where(p => !p.IsLinked())
-                        .Select(p => (string.IsNullOrEmpty(p.ReportName) ? "" : p.ReportName + "::") + $"{p.Name} ({p.ParameterValueKind})");
-                    throw new ToolError($"{ex.Message}\nParameters: {string.Join(", ", needed)}");
+                    try { File.Delete(pdf); } catch { /* temp file */ }
                 }
-                return new JObject { ["exported"] = output, ["format"] = format.ToString(), ["size_kb"] = Math.Round(new FileInfo(output).Length / 1024.0, 1) };
             });
+        }
+
+        private static void ExportToDisk(E.ReportDocument rd, ExportFormatType format, string output)
+        {
+            try
+            {
+                rd.ExportToDisk(format, output);
+            }
+            catch (Exception ex) when (ex.Message.IndexOf("parameter", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var needed = rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()
+                    .Where(p => !p.IsLinked())
+                    .Select(p => (string.IsNullOrEmpty(p.ReportName) ? "" : p.ReportName + "::") + $"{p.Name} ({p.ParameterValueKind})");
+                throw new ToolError($"{ex.Message}\nParameters: {string.Join(", ", needed)}");
+            }
         }
 
         /// <summary>
