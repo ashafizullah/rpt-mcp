@@ -24,6 +24,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude
 | `set_selection_formula` | Record or group selection formula |
 | `add_parameter` / `delete_parameter` | Report parameters |
 | `set_command_sql` | Replace the SQL of an existing SQL Command table (experimental) |
+| `add_table` | Add a database table (OLE DB / ADO, e.g. SQL Server or LocalDB) so its columns can be placed on the report; returns the column list |
 | `set_datasource` | Repoint tables to another server/database, optionally switching OLE DB provider (persisted) |
 | `remove_table` | Remove a table / command (guarded: refuses while its fields are used unless `force`) |
 | `set_text` | Change a text object's text |
@@ -93,7 +94,7 @@ Claude Desktop / other clients (`mcpServers` config):
 
 ## Database connections (optional)
 
-Editing does not need a database. `export_report`, `set_command_sql` and `set_datasource` usually do.
+Editing does not need a database. `export_report`, `set_command_sql` and `set_datasource` usually do, and `add_table` always does (Crystal reads the column list from the server).
 Pass `server` / `database` / `user` / `password` / `integrated` directly, or create `connections.json` next to the exe (or point `RPTMCP_CONNECTIONS` at it) and pass `connection: "<name>"`:
 
 ```json
@@ -109,6 +110,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 - "Inspect `C:\reports\Invoice.rpt` and change the title to *Tax Invoice*, bold 14pt."
 - "Add a formula `{@FullName}` = first + last name and put it in the detail section next to the customer code."
 - "Point every table in all reports under `C:\reports` to server `SQL02`, database `SalesProd`."
+- "Add table `dbo.Orders` from `(localdb)\MSSQLLocalDB`, database `Sales`, to the blank `Orders.rpt` and put `OrderNo` and `Total` in the details section."
 - "Export Invoice.rpt to PDF with `OrderNo = 1001` so I can check the layout."
 
 ## Tips
@@ -118,6 +120,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 ## Limitations
 
 - **Creating a new SQL Command is not supported.** The in-process Crystal runtime rejects it with "Failed to load database information", even though adding a plain table on the same connection works. `set_command_sql` can only edit a command that already exists, and it has not yet been verified against a report containing one.
+- `add_table` adds tables without links; when a report has several tables, Crystal cross-joins them. Adding table links is not supported yet.
 - Charts, cross-tabs and OLAP grids can be inspected and moved, but not structurally edited.
 - Line styles: the runtime rejects `double`, and draws `dashed`/`dotted` lines as hairlines. Pictures are stored as bitmaps (transparency is flattened to white).
 - `set_command_sql` and `set_datasource` go through Crystal's table-location API, which connects to the database to validate the schema.

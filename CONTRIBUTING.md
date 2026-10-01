@@ -23,6 +23,14 @@ $env:RPTMCP_TEST_REPORT = "C:\reports\Any.rpt"
 dotnet test RptMcp.sln -c Release
 ```
 
+- The `add_table` test also needs a reachable SQL Server table, read with Windows integrated security:
+
+```powershell
+$env:RPTMCP_TEST_DB_SERVER   = "(localdb)\MSSQLLocalDB"
+$env:RPTMCP_TEST_DB_DATABASE = "rptmcp"
+$env:RPTMCP_TEST_DB_TABLE    = "dbo.ProductionReport"
+```
+
 ## Guidelines
 
 - Keep tools safe: edits go through `Edit`/`ReportIO.Save` (automatic backup), and destructive operations should refuse when something still depends on them.

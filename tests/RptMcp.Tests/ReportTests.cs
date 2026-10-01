@@ -139,5 +139,77 @@ namespace RptMcp.Tests
                 Assert.Contains("RptMcpField", forced["removed_objects"].Values<string>());
             }
         }
+
+        [SkippableFact]
+        public void New_field_object_can_be_restyled_in_the_same_batch()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var (section, _) = FirstTextObject(c.CallOk("inspect_report", new JObject { ["path"] = _report }));
+                var res = c.CallOk("batch_edit", new JObject
+                {
+                    ["path"] = _report,
+                    ["operations"] = new JArray(
+                        new JObject { ["tool"] = "set_formula", ["name"] = "RptMcpTest", ["text"] = "\"x\"" },
+                        new JObject { ["tool"] = "add_field_object", ["section"] = section, ["field"] = "{@RptMcpTest}", ["left"] = 0, ["top"] = 0, ["width"] = 500, ["height"] = 200, ["name"] = "RptMcpField" },
+                        new JObject { ["tool"] = "set_object_props", ["object"] = "RptMcpField", ["left"] = 100, ["bold"] = true })
+                });
+                Assert.Equal("Arial 10pt bold", (string)res["operations"][2]["result"]["now"]["font"]);
+            }
+        }
+
+        /// <summary>
+        /// Needs a reachable SQL Server table: RPTMCP_TEST_DB_SERVER, RPTMCP_TEST_DB_DATABASE and RPTMCP_TEST_DB_TABLE
+        /// (Windows integrated security), e.g. (localdb)\MSSQLLocalDB / rptmcp / dbo.ProductionReport.
+        /// </summary>
+        [SkippableFact]
+        public void Add_table_makes_its_columns_usable_and_exports_rows()
+        {
+            RequireReport();
+            string server = Environment.GetEnvironmentVariable("RPTMCP_TEST_DB_SERVER"),
+                   database = Environment.GetEnvironmentVariable("RPTMCP_TEST_DB_DATABASE"),
+                   table = Environment.GetEnvironmentVariable("RPTMCP_TEST_DB_TABLE");
+            Skip.If(string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(database) || string.IsNullOrWhiteSpace(table),
+                "Set RPTMCP_TEST_DB_SERVER, RPTMCP_TEST_DB_DATABASE and RPTMCP_TEST_DB_TABLE to run the add_table test.");
+            const string alias = "RptMcpTable";
+
+            using (var c = new McpClient())
+            {
+                var (section, _) = FirstTextObject(c.CallOk("inspect_report", new JObject { ["path"] = _report }));
+                var added = c.CallOk("add_table", new JObject
+                {
+                    ["path"] = _report, ["table"] = table, ["alias"] = alias,
+                    ["server"] = server, ["database"] = database, ["integrated"] = true
+                });
+                var fields = added["fields"].Values<string>().ToList();
+                Assert.NotEmpty(fields);
+                Assert.All(fields, f => Assert.StartsWith("{" + alias + ".", f));
+
+                var again = c.Call("add_table", new JObject
+                {
+                    ["path"] = _report, ["table"] = table, ["alias"] = alias,
+                    ["server"] = server, ["database"] = database, ["integrated"] = true
+                });
+                Assert.True(again.IsError);
+                Assert.Contains("already has a table", again.Text);
+
+                var inspected = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_fields"] = true });
+                Assert.Equal(fields.Count, ((JArray)inspected["tables"][alias]["fields"]).Count);
+
+                var firstField = fields[0].Substring(0, fields[0].LastIndexOf(':'));
+                c.CallOk("add_field_object", new JObject
+                {
+                    ["path"] = _report, ["section"] = section, ["field"] = firstField,
+                    ["left"] = 0, ["top"] = 0, ["width"] = 1000, ["height"] = 200
+                });
+
+                var csv = Path.Combine(_dir, "out.csv");
+                // No logon arguments: the connection saved by add_table must be enough.
+                c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "csv", ["output_path"] = csv });
+                Assert.True(File.Exists(csv));
+                Assert.NotEmpty(File.ReadAllLines(csv));
+            }
+        }
     }
 }
