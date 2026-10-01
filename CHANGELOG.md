@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`add_group` / `delete_group`**: group a report on a field (with date grouping per day/week/month/… and ascending/descending order). Crystal adds the group header and footer sections, named after the field (e.g. `ShiftHeaderSection1`); the tool returns them. `delete_group` refuses while those sections hold objects or formulas/running totals summarize per the group, unless `force`.
+- **`add_sort` / `delete_sort`**: record sorts. `add_sort` on a field that is already sorted (including a group's field) changes the direction.
+- **`add_running_total` / `delete_running_total`**: running totals with conditional evaluation (each record, on change of a field or group, on a formula) and reset (never, on change of a field or group, on a formula).
+- **`set_parameter`**: change a parameter's prompt, type, multiple values or default values in place, without deleting it (which would break the formulas using it).
+- **`set_text_with_fields`**: text objects with embedded fields, e.g. `Shift : {T.Shift}` or `Page {PageNumber} of {TotalPageCount}`.
+- **`add_section` / `delete_section`** and **`move_object`** (moves an object to another section keeping its name and formatting).
+- **`set_page_setup`**: paper size, orientation and margins. Set through a user paper size, because the runtime ignores the engine's `PaperSize`/`PaperOrientation` when rendering without a printer.
+- **`verify_database`**: checks the report against its database and reports missing or retyped columns, what uses them and logon/provider problems, without saving. (Crystal's own Verify Database silently deletes objects bound to a missing column.)
+- `add_field_object` and embedded fields accept **special fields** (`RecordNumber`, `PageNumber`, `TotalPageCount`, `PageNofM`, `PrintDate`, `GroupNumber`, `FileName`, …); `inspect_report` marks them `"special": true`.
+- `inspect_report` shows the printable page size (`content_twips`).
+
+### Fixed
+- `add_field_object` with a running total (`{#Name}`) produced a report that could not be saved. The field is now shown through a formula `{@Name}` = `{#Name}`.
+- Usage guards (`delete_formula`, `delete_parameter`, `remove_table`) also count running totals that summarize, evaluate or reset on the field.
+
 ## [0.1.3] - 2026-10-01
 
 ### Added

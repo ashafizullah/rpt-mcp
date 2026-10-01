@@ -27,6 +27,28 @@ namespace RptMcp
             return new Ras { Db = sub.DatabaseController, DataDef = sub.DataDefController, ReportDef = sub.ReportDefController };
         }
 
+        /// <summary>
+        /// Calls Add/Modify/Remove on the running total controller. The platform-neutral reference assembly of some
+        /// runtime SPs lacks RunningTotalFieldController although the loaded (64-bit) one has it, so it is late-bound.
+        /// </summary>
+        public object RunningTotals(string method, params object[] args)
+        {
+            var prop = typeof(ISCRDataDefController).GetProperty("RunningTotalFieldController")
+                       ?? throw new ToolError("This Crystal Reports runtime does not support running totals (no RunningTotalFieldController).");
+            var controller = prop.GetValue(DataDef);
+            // The property type is the coclass interface; the methods live on the interfaces it inherits.
+            var m = new[] { prop.PropertyType }.Concat(prop.PropertyType.GetInterfaces()).Select(t => t.GetMethod(method)).FirstOrDefault(x => x != null)
+                    ?? throw new ToolError($"The running total controller has no {method} method in this Crystal Reports runtime.");
+            try { return m.Invoke(controller, args); }
+            catch (System.Reflection.TargetInvocationException ex) when (ex.InnerException != null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw;
+            }
+        }
+
+        public IEnumerable<RD.Area> Areas() => ReportDef.ReportDefinition.Areas.Cast<RD.Area>();
+
         public static IEnumerable<string> SubreportNames(E.ReportDocument main) =>
             main.Subreports.Cast<E.ReportDocument>().Select(s => s.Name).ToList();
 
