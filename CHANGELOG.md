@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`add_subreport`**: insert another `.rpt` as a subreport into a section (the section grows to fit), optionally with links.
+- **`set_subreport_links`**: link a subreport to the main report, parameter to parameter or field to field. For a field link the subreport's record selection is extended with `{field} = {?Pm-...}` (the runtime does not add it, unlike the designer); removing the link removes that filter. `inspect_report` lists the links (`subreport_links`).
+
+### Fixed
+- `add_parameter` (and `set_parameter`) inside a subreport failed with "A subreport name is required".
+- `move_object` on a subreport object now explains that Crystal cannot move subreports, instead of failing midway.
+
 ## [0.1.4] - 2026-10-01
 
 ### Added

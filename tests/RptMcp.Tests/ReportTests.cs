@@ -249,6 +249,50 @@ namespace RptMcp.Tests
             }
         }
 
+        [SkippableFact]
+        public void Add_subreport_links_parameters_and_accepts_subreport_edits()
+        {
+            RequireReport();
+            var source = Path.Combine(_dir, "source.rpt");
+            File.Copy(_report, source);
+            using (var c = new McpClient())
+            {
+                var inspected = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_objects"] = false });
+                var section = ((JObject)inspected["sections"]).Properties().First(s => (string)s.Value["kind"] == "ReportFooter").Name;
+                var mainParams = ((JObject)inspected["parameters"]).Properties().Select(p => "{?" + p.Name + "}").ToList();
+
+                var added = c.CallOk("add_subreport", new JObject
+                {
+                    ["path"] = _report, ["section"] = section, ["source_path"] = source, ["name"] = "RptMcpSub",
+                    ["left"] = 0, ["top"] = 0, ["width"] = 3000, ["height"] = 400,
+                    ["links"] = new JArray(mainParams.Select(p => new JObject { ["main"] = p }))
+                });
+                Assert.Equal("RptMcpSub", (string)added["subreport"]);
+                Assert.True(c.Call("add_subreport", new JObject
+                {
+                    ["path"] = _report, ["section"] = section, ["source_path"] = source, ["name"] = "RptMcpSub",
+                    ["left"] = 0, ["top"] = 0, ["width"] = 3000, ["height"] = 400
+                }).IsError);
+
+                var after = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_objects"] = false });
+                Assert.Contains("RptMcpSub", after["subreports"].Values<string>());
+                Assert.Equal(mainParams.Count, ((JArray)after["subreport_links"]?["RptMcpSub"] ?? new JArray()).Count);
+
+                // Parameters inside a subreport need the subreport's name (this used to fail).
+                c.CallOk("add_parameter", new JObject { ["path"] = _report, ["subreport"] = "RptMcpSub", ["name"] = "RptMcpSubParam" });
+                var sub = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["subreport"] = "RptMcpSub", ["include_objects"] = false });
+                Assert.NotNull(sub["parameters"]["RptMcpSubParam"]);
+
+                var obj = (string)added["object"];
+                var move = c.Call("move_object", new JObject { ["path"] = _report, ["object"] = obj, ["section"] = FirstTextObject(c.CallOk("inspect_report", new JObject { ["path"] = _report })).Section });
+                Assert.True(move.IsError);
+                Assert.Contains("subreport", move.Text);
+
+                var cleared = c.CallOk("set_subreport_links", new JObject { ["path"] = _report, ["subreport"] = "RptMcpSub", ["links"] = new JArray(), ["replace"] = true });
+                Assert.Empty((JArray)cleared["links"]);
+            }
+        }
+
         /// <summary>Exports to CSV, giving every prompting parameter its first default value (or a value of its type).</summary>
         private void ExportCsv(McpClient c, string csv)
         {

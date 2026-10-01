@@ -61,6 +61,13 @@ namespace RptMcp
                     ["content_twips"] = $"{po.PageContentWidth}x{po.PageContentHeight}"
                 };
                 o["subreports"] = new JArray(rd.Subreports.Cast<E.ReportDocument>().Select(s => s.Name));
+                var links = new JObject();
+                foreach (E.ReportDocument s in rd.Subreports)
+                {
+                    var l = LinkList(rd, s.Name);
+                    if (l.Count > 0) links[s.Name] = l;
+                }
+                if (links.Count > 0) o["subreport_links"] = links;
             }
 
             o["tables"] = DescribeTables(main, sub, fields);

@@ -272,6 +272,27 @@ namespace RptMcp
                        OutArg),
                 SetPageSetup);
 
+            r.Add("add_subreport",
+                "Insert another .rpt as a subreport (Crystal copies it into this report). The runtime cannot create an empty report, so build the " +
+                "subreport as its own .rpt first (e.g. copy a report and trim it with these tools). Link it with links / set_subreport_links so it does not prompt.",
+                Schema(PathArg, Req("section", "string", "Section of the main report, e.g. ReportFooterSection1 or a group footer."),
+                       Req("source_path", "string", "The .rpt to import."),
+                       Opt("name", "string", "Subreport name (default: the file name)."),
+                       Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
+                       Req("width", "integer", "Width (twips)."), Req("height", "integer", "Height (twips); the section grows to fit."),
+                       Opt("links", "object[]", "Links, as for set_subreport_links."), OutArg),
+                AddSubreport);
+
+            r.Add("set_subreport_links",
+                "Link a subreport to the main report so it gets its values from there instead of prompting. Each link is {\"main\": ..., \"sub\": ...}: " +
+                "a main parameter to a subreport parameter ({?Start} -> {?Start}), or a main field/formula to a subreport field ({Orders.Customer} -> {Lines.Customer}), " +
+                "which filters the subreport to the main record's value (e.g. in a group footer: only that group's rows). sub defaults to the same name. " +
+                "Existing links are kept unless replace=true; links [] with replace=true removes them all.",
+                Schema(PathArg, Req("subreport", "string", "Subreport name."),
+                       Req("links", "object[]", "Links: [{\"main\": \"{?Start}\", \"sub\": \"{?Start}\"}, {\"main\": \"{Orders.Customer}\"}]."),
+                       Opt("replace", "boolean", "Replace all existing links (default: add/update)."), OutArg),
+                SetSubreportLinks);
+
             r.Add("add_text_object", "Add a text object to a section. Use set_object_props afterwards for font/color/alignment.",
                 Schema(PathArg, Req("section", "string", "Section name."), Req("text", "string", "Text."),
                        Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
