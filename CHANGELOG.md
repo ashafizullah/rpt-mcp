@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`add_table`**: add a database table (OLE DB / ADO, default provider `MSOLEDBSQL`) to a report, including one built from scratch with no data source yet. Crystal reads the column list from the server; the tool returns it so the columns can be placed with `add_field_object`. Also allowed inside `batch_edit`.
+
+### Fixed
+- `set_object_props` (and anything else reading a field object's font or color) failed with `NullReferenceException` on a field object added earlier in the same `batch_edit`. New field objects now get Crystal's default font (Arial 10pt, black) explicitly.
+- `set_datasource` on a report without tables silently did nothing; it now reports that and points to `add_table`.
+- `set_datasource` with `integrated` keeps the stored type of `Integrated Security` (a Boolean in reports saved by the Crystal designer) instead of always writing a string.
+
 ## [0.1.2] - 2026-09-29
 
 ### Added

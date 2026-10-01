@@ -44,7 +44,7 @@ namespace RptMcp.Tests
                 }
                 var names = tools.Select(t => (string)t["name"]).ToList();
                 Assert.Equal(names.Count, names.Distinct().Count());
-                foreach (var expected in new[] { "inspect_report", "batch_edit", "set_field_format", "export_report", "replace_picture" })
+                foreach (var expected in new[] { "inspect_report", "batch_edit", "set_field_format", "export_report", "replace_picture", "add_table" })
                     Assert.Contains(expected, names);
             }
         }
@@ -130,6 +130,21 @@ namespace RptMcp.Tests
                 }
             }
             finally { Directory.Delete(dir, true); }
+        }
+
+        [Fact]
+        public void Add_table_validates_arguments_before_opening_the_file()
+        {
+            using (var c = new McpClient())
+            {
+                var noDb = c.Call("add_table", new JObject { ["path"] = @"C:\definitely\missing.rpt", ["table"] = "Orders", ["server"] = "srv" });
+                Assert.True(noDb.IsError);
+                Assert.Contains("server and database", noDb.Text);
+
+                var badName = c.Call("add_table", new JObject { ["path"] = @"C:\definitely\missing.rpt", ["table"] = "a.b.c", ["server"] = "srv", ["database"] = "db" });
+                Assert.True(badName.IsError);
+                Assert.Contains("schema.Table", badName.Text);
+            }
         }
 
         [Fact]

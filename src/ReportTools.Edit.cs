@@ -30,7 +30,7 @@ namespace RptMcp
         internal static readonly string[] EditTools =
         {
             "set_formula", "delete_formula", "set_selection_formula", "add_parameter", "delete_parameter",
-            "set_command_sql", "set_datasource", "remove_table", "set_text", "set_object_props",
+            "set_command_sql", "add_table", "set_datasource", "remove_table", "set_text", "set_object_props",
             "set_section_props", "add_text_object", "add_field_object", "delete_object",
             "set_field_format", "set_condition_formula", "add_line", "add_box", "add_picture", "replace_picture"
         };
@@ -301,6 +301,83 @@ namespace RptMcp
             return new JObject { ["table"] = table.Alias, ["action"] = "removed", ["removed_objects"] = removed };
         });
 
+        private static JToken AddTable(JObject a)
+        {
+            var logon = ReportIO.GetLogon(a);
+            if (string.IsNullOrEmpty(logon.Server) || string.IsNullOrEmpty(logon.Database))
+                throw new ToolError("Give both server and database (directly or via connection).");
+
+            // "Table" or "schema.Table"; the schema defaults to dbo.
+            var parts = ((string)a["table"] ?? "").Trim().Split('.');
+            if (parts.Length > 2 || parts.Any(string.IsNullOrWhiteSpace))
+                throw new ToolError("table must be 'Table' or 'schema.Table', e.g. dbo.Orders.");
+            var name = parts.Last();
+            var schema = parts.Length == 2 ? parts[0] : "dbo";
+            var alias = string.IsNullOrWhiteSpace((string)a["alias"]) ? name : ((string)a["alias"]).Trim();
+            var provider = string.IsNullOrWhiteSpace((string)a["provider"]) ? "MSOLEDBSQL" : ((string)a["provider"]).Trim();
+
+            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider));
+        }
+
+        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider)
+        {
+            var existing = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
+            if (existing != null)
+                throw new ToolError($"The report already has a table with alias '{existing.Alias}'. Pass another 'alias', or use set_datasource to repoint it.");
+
+            // Without the crdb_ado attributes Crystal fails with "Failed to load database information".
+            var integrated = logon.Integrated || string.IsNullOrEmpty(logon.User);
+            var lp = new DD.PropertyBag
+            {
+                ["Provider"] = provider,
+                ["Data Source"] = logon.Server,
+                ["Initial Catalog"] = logon.Database,
+                ["Integrated Security"] = integrated,
+                ["Use DSN Default Properties"] = false,
+            };
+            var ci = new DD.ConnectionInfo
+            {
+                Kind = DD.CrConnectionInfoKindEnum.crConnectionInfoKindCRQE,
+                Attributes = new DD.PropertyBag
+                {
+                    ["Database DLL"] = "crdb_ado.dll",
+                    ["QE_DatabaseType"] = "OLE DB (ADO)",
+                    ["QE_ServerDescription"] = logon.Server,
+                    ["QE_DatabaseName"] = logon.Database,
+                    ["QE_SQLDB"] = true,
+                    ["SSO Enabled"] = false,
+                    ["QE_LogonProperties"] = lp,
+                }
+            };
+            if (!integrated) ApplyCredentials(ci, logon);
+
+            var table = new DD.Table { Name = name, Alias = alias, QualifiedName = $"{logon.Database}.{schema}.{name}", ConnectionInfo = ci };
+            try
+            {
+                // Crystal connects here and reads the column list into DataFields.
+                ras.Db.AddTable(table, null);
+            }
+            catch (System.Runtime.InteropServices.COMException ex)
+            {
+                var hint = Eq(provider, "SQLOLEDB")
+                    ? " The legacy SQLOLEDB provider cannot reach LocalDB or TLS 1.2-only servers; use MSOLEDBSQL."
+                    : $" Check that {schema}.{name} exists in {logon.Database} on {logon.Server}, the credentials, and that the '{provider}' OLE DB provider is installed.";
+                throw new ToolError($"Crystal could not add the table: {ex.Message.Trim()}{hint}");
+            }
+
+            var added = ras.Db.Database.Tables.Cast<DD.Table>().First(t => Eq(t.Alias, alias));
+            return Compact(new JObject
+            {
+                ["table"] = added.Alias,
+                ["qualified"] = added.QualifiedName,
+                ["server"] = logon.Server,
+                ["database"] = logon.Database,
+                ["provider"] = provider,
+                ["fields"] = new JArray(added.DataFields.Cast<DD.ISCRField>().Select(f => $"{f.FormulaForm}:{f.Type.ToString().Replace("crFieldValueType", "").Replace("Field", "")}")),
+                ["note"] = ras.Db.Database.Tables.Count > 1 ? "The table is not linked to the other tables (Crystal will cross-join them)." : null,
+            });
+        }
+
         private static JToken SetDatasource(JObject a) => Edit(a, main =>
         {
             var logon = ReportIO.GetLogon(a);
@@ -308,6 +385,8 @@ namespace RptMcp
                 throw new ToolError("Give server and/or database (directly or via connection).");
             var alias = (string)a["table"];
             var scopes = Sub(a) != null ? new List<string> { Sub(a) } : new List<string> { null }.Concat(Ras.SubreportNames(main)).ToList();
+            if (scopes.All(s => Ras.For(main, s).Db.Database.Tables.Count == 0))
+                throw new ToolError("The report has no tables to repoint. Use add_table to add one.");
 
             var changed = new JArray();
             foreach (var scope in scopes)
@@ -346,7 +425,7 @@ namespace RptMcp
                     }
                     if (logon.IntegratedSpecified)
                     {
-                        // Crystal stores this as the string "True"/"False".
+                        // Stored as a Boolean or as the string "True"/"False"; SetExisting keeps whichever it is.
                         SetExisting(lp, logon.Integrated ? "True" : "False", "Integrated Security");
                         if (logon.Integrated) { ci.UserName = ""; ci.Password = ""; }
                     }
@@ -367,7 +446,10 @@ namespace RptMcp
             foreach (var k in keys)
             {
                 var id = ids.FirstOrDefault(x => Eq(x, k));
-                if (id != null) { bag[id] = value; hit = true; }
+                if (id == null) continue;
+                // Keep the stored type: e.g. Integrated Security is a Boolean in reports saved by the designer.
+                bag[id] = bag[id] is bool && value is string s && bool.TryParse(s, out var b) ? b : value;
+                hit = true;
             }
             if (!hit) bag[keys[0]] = value;
         }
@@ -501,7 +583,14 @@ namespace RptMcp
             var ras = Ras.For(main, Sub(a));
             var section = ras.Section((string)a["section"]);
             var field = ras.Field((string)a["field"]);
-            var obj = new RD.FieldObject { DataSourceName = field.FormulaForm, FieldValueType = field.Type };
+            // Crystal's default for a new field. Without an explicit FontColor the engine's FieldObject.Font/Color
+            // throw NullReferenceException until the report is reloaded, which breaks later edits in a batch_edit.
+            var obj = new RD.FieldObject
+            {
+                DataSourceName = field.FormulaForm,
+                FieldValueType = field.Type,
+                FontColor = new RD.FontColor { Font = new RD.Font { Name = "Arial", Size = 10 }, Color = 0 }
+            };
             Place(obj, a);
             var res = AddObject(ras, obj, section);
             res["field"] = field.FormulaForm;

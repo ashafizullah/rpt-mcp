@@ -110,6 +110,17 @@ namespace RptMcp
                        Opt("force", "boolean", "Delete the objects bound to its fields, then remove the table."), SubArg, OutArg),
                 RemoveTable);
 
+            r.Add("add_table",
+                "Add a database table to the report (OLE DB / ADO, e.g. SQL Server), so its columns can be used in field objects and formulas. " +
+                "Crystal connects to read the column list, so the server must be reachable; the columns are returned. " +
+                "The new table is not linked to existing tables. To repoint tables that are already in the report, use set_datasource.",
+                Schema(new[] { PathArg, Req("table", "string", "Table name, optionally with schema: 'Orders' or 'dbo.Orders' (schema defaults to dbo)."),
+                               Opt("alias", "string", "Alias used in field names, {Alias.Column} (default: the table name)."),
+                               Opt("provider", "string", "OLE DB provider (default MSOLEDBSQL; the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
+                               SubArg, OutArg }
+                       .Concat(LogonArgs("server, database and credentials; integrated security when no user is given")).ToArray()),
+                AddTable);
+
             r.Add("set_datasource",
                 "Point tables at another server/database and persist it in the .rpt (e.g. switch a template from a dev to a production database). " +
                 "Applies to the main report and all subreports unless 'subreport' is given.",
