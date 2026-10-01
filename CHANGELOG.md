@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-01
+
 ### Added
 - **`export_report` to `png` / `jpg`**: renders the report pages as images (the Crystal runtime cannot export images, so it exports a temporary PDF and renders it with the PDF renderer built into Windows). `dpi` (default 150) and `pages` (`"1"`, `"1-3"`, `"1,3"`) choose what to render; one page goes to `output_path`, several to `<name>-<page>.png`. The result lists each page's pixel size. Lets an agent check a layout change itself.
 - **`set_condition_formula` on sections**: pass `section` instead of `object`, e.g. `Format.EnableSuppress` to hide a page header once the table has ended. Crystal ignores conditional suppress on lines and boxes, so suppressing their section is the way to hide them.
@@ -79,7 +81,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas, parameters, data sources, field formats, conditional formulas, lines, boxes, pictures), with backups, usage guards, `batch_edit` and `export_report`.
 
-[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.2...v0.1.3
