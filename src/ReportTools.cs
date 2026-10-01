@@ -404,12 +404,16 @@ namespace RptMcp
                 VerifyDatabase);
 
             r.Add("export_report",
-                "Run the report against the database and export it (PDF is best for visually checking a change). " +
+                "Run the report against the database and export it. To visually check a layout change, export to png and open the image: " +
+                "a single page is written to output_path, several pages to <name>-<page>.png next to it. " +
                 "Parameter values: {\"Name\": value} or {\"Name\": [v1, v2]}; for an unlinked subreport parameter use \"Subreport::Name\".",
                 Schema(new[]
                 {
                     PathArg, Req("output_path", "string", "Output file."),
-                    Enum("format", "Export format (default pdf).", false, "pdf", "xlsx", "xls", "xls_data", "doc", "rtf", "csv", "txt", "rpt"),
+                    Enum("format", "Export format (default pdf). png/jpg render the pages as images.", false,
+                         "pdf", "xlsx", "xls", "xls_data", "doc", "rtf", "csv", "txt", "rpt", "png", "jpg"),
+                    Opt("dpi", "integer", "png/jpg only: resolution, 36-600 (default 150)."),
+                    Opt("pages", "string", "png/jpg only: pages to render, e.g. \"1\", \"1-3\" or \"1,3\" (default all)."),
                     Opt("parameters", "object", "Parameter values by name."),
                     Opt("data", "object",
                         "Rows to use instead of querying the database (for DataSet/XML-based reports or quick previews): " +

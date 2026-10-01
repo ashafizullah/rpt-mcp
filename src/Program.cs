@@ -87,7 +87,7 @@ namespace RptMcp
                             "Always call inspect_report first to learn object, section, formula and table names. " +
                             "Edits overwrite the file in place (a timestamped backup goes to _rptmcp_backup next to it) unless output_path is given. " +
                             "Positions and sizes are in twips (1440 = 1 inch, 567 ≈ 1 cm). " +
-                            "Use export_report to PDF to visually verify a change."
+                            "To visually verify a change, export_report to png and open the image."
                     };
                 case "notifications/initialized":
                 case "notifications/cancelled":
