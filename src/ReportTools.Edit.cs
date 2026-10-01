@@ -29,9 +29,11 @@ namespace RptMcp
 
         internal static readonly string[] EditTools =
         {
-            "set_formula", "delete_formula", "set_selection_formula", "add_parameter", "delete_parameter",
-            "set_command_sql", "add_table", "set_datasource", "remove_table", "set_text", "set_object_props",
-            "set_section_props", "add_text_object", "add_field_object", "delete_object",
+            "set_formula", "delete_formula", "set_selection_formula", "add_parameter", "set_parameter", "delete_parameter",
+            "add_group", "delete_group", "add_sort", "delete_sort", "add_running_total", "delete_running_total",
+            "set_command_sql", "add_table", "set_datasource", "remove_table", "set_text", "set_text_with_fields", "set_object_props",
+            "set_section_props", "add_section", "delete_section", "move_object", "set_page_setup",
+            "add_text_object", "add_field_object", "delete_object",
             "set_field_format", "set_condition_formula", "add_line", "add_box", "add_picture", "replace_picture"
         };
 
@@ -140,10 +142,20 @@ namespace RptMcp
         /// </summary>
         private static JArray GuardUsage(E.ReportDocument main, string sub, Ras ras, ICollection<string> forms, string label, bool force)
         {
+            var usages = Usages(main, sub, ras, forms, out var boundObjects);
+            if (usages.Count > 0 && !force)
+                throw new ToolError($"{label} is still used by: {string.Join(", ", usages.Distinct())}. " +
+                                    "Remove those usages first, or pass force=true (bound field objects are deleted with it; other references will break).");
+            return new JArray(boundObjects);
+        }
+
+        /// <summary>Every place that references any of <paramref name="forms"/>; <paramref name="boundObjects"/> gets the field objects bound to one.</summary>
+        private static List<string> Usages(E.ReportDocument main, string sub, Ras ras, ICollection<string> forms, out List<string> boundObjects)
+        {
             bool Uses(string text) => text != null && forms.Any(f => text.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0);
             bool Is(string name) => forms.Any(f => Eq(f, name));
 
-            var boundObjects = ras.Objects().OfType<RD.FieldObject>().Where(o => Is(o.DataSourceName)).Select(o => o.Name).ToList();
+            boundObjects = ras.Objects().OfType<RD.FieldObject>().Where(o => Is(o.DataSourceName)).Select(o => o.Name).ToList();
             var usages = boundObjects.Select(n => "field object " + n).ToList();
 
             var rd = ReportIO.Scope(main, sub);
@@ -162,12 +174,16 @@ namespace RptMcp
             foreach (var item in ras.AllConditions())
                 foreach (var c in item.Value.Where(c => Uses(c.Value)))
                     usages.Add($"condition {item.Key}.{c.Key}");
-
-            if (usages.Count > 0 && !force)
-                throw new ToolError($"{label} is still used by: {string.Join(", ", usages.Distinct())}. " +
-                                    "Remove those usages first, or pass force=true (bound field objects are deleted with it; other references will break).");
-            return new JArray(boundObjects);
+            foreach (DD.RunningTotalField rt in ras.DataDef.DataDefinition.RunningTotalFields)
+                if (!Is(rt.FormulaForm) && (Is(rt.SummarizedField?.FormulaForm) || Is(ConditionText(rt.EvaluateCondition)) || Is(ConditionText(rt.ResetCondition))
+                                            || Uses(rt.EvaluateCondition as string) || Uses(rt.ResetCondition as string)))
+                    usages.Add("running total " + rt.Name);
+            return usages;
         }
+
+        /// <summary>The field (or group field) a running total condition refers to, or the formula text.</summary>
+        private static string ConditionText(object condition) =>
+            condition is DD.ISCRField f ? f.FormulaForm : condition is DD.Group g ? g.ConditionField?.FormulaForm : condition as string;
 
         private static JToken SetSelectionFormula(JObject a) => Edit(a, main =>
         {
@@ -258,6 +274,64 @@ namespace RptMcp
             var removedObjects = GuardUsage(main, Sub(a), ras, p.FormulaForm, (bool?)a["force"] ?? false);
             ras.DataDef.ParameterFieldController.Remove(p);
             return new JObject { ["parameter"] = name, ["action"] = "deleted", ["removed_objects"] = removedObjects };
+        });
+
+        private static JToken SetParameter(JObject a) => Edit(a, main =>
+        {
+            var name = Norm((string)a["name"], "?");
+            var ras = Ras.For(main, Sub(a));
+            var old = ras.DataDef.DataDefinition.ParameterFields.Cast<DD.ISCRField>().FirstOrDefault(x => Eq(x.Name, name)) as DD.ParameterField
+                      ?? throw new ToolError($"Parameter '{name}' not found. Use add_parameter to create it.");
+            var p = (DD.ParameterField)old.Clone(true);
+            var done = new JArray();
+            var defaults = a["default_values"];
+
+            if (a["prompt"] != null) { p.Description = (string)a["prompt"]; done.Add("prompt"); }
+            if (a["allow_multiple"] != null) { p.AllowMultiValue = (bool)a["allow_multiple"]; done.Add("allow_multiple"); }
+            if (a["type"] != null)
+            {
+                var type = ValueType((string)a["type"]);
+                if (type != old.Type)
+                {
+                    if (!ras.DataDef.ParameterFieldController.IsValidType(type)) throw new ToolError($"Crystal does not accept '{a["type"]}' as a parameter type.");
+                    var usages = Usages(main, Sub(a), ras, new[] { old.FormulaForm }, out _);
+                    if (usages.Count > 0 && !((bool?)a["force"] ?? false))
+                        throw new ToolError($"Changing the type of {old.FormulaForm} can break: {string.Join(", ", usages.Distinct())}. Pass force=true to change it anyway.");
+                    p.Type = type;
+                    // Existing defaults are re-typed below unless new ones are given.
+                    if (defaults == null && old.DefaultValues != null && old.DefaultValues.Count > 0)
+                        defaults = new JArray(old.DefaultValues.Cast<object>().OfType<DD.ParameterFieldDiscreteValue>()
+                            .Select(v => Convert.ToString(v.Value, System.Globalization.CultureInfo.InvariantCulture)));
+                    done.Add("type");
+                }
+            }
+            if (defaults != null)
+            {
+                if (!(defaults is JArray defs)) throw new ToolError("default_values must be an array ([] clears them).");
+                var values = new DD.Values();
+                foreach (var d in defs)
+                {
+                    try { values.Add(new DD.ParameterFieldDiscreteValue { Value = ConvertValue((string)d, p.Type) }); }
+                    catch (FormatException) { throw new ToolError($"Default value '{d}' is not a valid {p.Type.ToString().Replace("crFieldValueType", "").Replace("Field", "").ToLowerInvariant()}."); }
+                }
+                p.DefaultValues = values;
+                done.Add("default_values");
+            }
+            if (done.Count == 0) throw new ToolError("Nothing to change: pass prompt, type, allow_multiple or default_values.");
+
+            ras.DataDef.ParameterFieldController.Modify(old, p);
+            var now = (DD.ParameterField)ras.DataDef.DataDefinition.ParameterFields.Cast<DD.ISCRField>().First(x => Eq(x.Name, name));
+            return new JObject
+            {
+                ["parameter"] = name, ["changed"] = done,
+                ["now"] = Compact(new JObject
+                {
+                    ["type"] = now.Type.ToString().Replace("crFieldValueType", "").Replace("Field", "").ToLowerInvariant(),
+                    ["prompt"] = now.Description,
+                    ["multiple"] = now.AllowMultiValue,
+                    ["defaults"] = new JArray(now.DefaultValues.Cast<object>().OfType<DD.ParameterFieldDiscreteValue>().Select(v => ValueText(v.Value))),
+                })
+            };
         });
 
         // ---------- database ----------
@@ -582,18 +656,153 @@ namespace RptMcp
         {
             var ras = Ras.For(main, Sub(a));
             var section = ras.Section((string)a["section"]);
-            var field = ras.Field((string)a["field"]);
+            var (source, type, via) = FieldSource(ras, (string)a["field"]);
             // Crystal's default for a new field. Without an explicit FontColor the engine's FieldObject.Font/Color
             // throw NullReferenceException until the report is reloaded, which breaks later edits in a batch_edit.
             var obj = new RD.FieldObject
             {
-                DataSourceName = field.FormulaForm,
-                FieldValueType = field.Type,
+                DataSourceName = source,
+                FieldValueType = type,
                 FontColor = new RD.FontColor { Font = new RD.Font { Name = "Arial", Size = 10 }, Color = 0 }
             };
             Place(obj, a);
             var res = AddObject(ras, obj, section);
-            res["field"] = field.FormulaForm;
+            res["field"] = via?.Item1 ?? source;
+            if (via != null) { res["via_formula"] = source; res["note"] = via.Item2; }
+            return res;
+        });
+
+        // ---------- special fields ----------
+
+        /// <summary>Crystal's special fields: name as written in formulas and field objects → value type.</summary>
+        private static readonly Dictionary<string, DD.CrFieldValueTypeEnum> SpecialFields =
+            new Dictionary<string, DD.CrFieldValueTypeEnum>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["RecordNumber"] = DD.CrFieldValueTypeEnum.crFieldValueTypeNumberField,
+                ["GroupNumber"] = DD.CrFieldValueTypeEnum.crFieldValueTypeNumberField,
+                ["PageNumber"] = DD.CrFieldValueTypeEnum.crFieldValueTypeNumberField,
+                ["TotalPageCount"] = DD.CrFieldValueTypeEnum.crFieldValueTypeNumberField,
+                ["PageNofM"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["PrintDate"] = DD.CrFieldValueTypeEnum.crFieldValueTypeDateField,
+                ["PrintTime"] = DD.CrFieldValueTypeEnum.crFieldValueTypeTimeField,
+                ["ModificationDate"] = DD.CrFieldValueTypeEnum.crFieldValueTypeDateField,
+                ["ModificationTime"] = DD.CrFieldValueTypeEnum.crFieldValueTypeTimeField,
+                ["DataDate"] = DD.CrFieldValueTypeEnum.crFieldValueTypeDateField,
+                ["DataTime"] = DD.CrFieldValueTypeEnum.crFieldValueTypeTimeField,
+                ["ReportTitle"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["ReportComments"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["FileName"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["FileAuthor"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["FileCreationDate"] = DD.CrFieldValueTypeEnum.crFieldValueTypeDateField,
+                ["RecordSelection"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+                ["GroupSelection"] = DD.CrFieldValueTypeEnum.crFieldValueTypeStringField,
+            };
+
+        /// <summary>The canonical special field name for "RecordNumber" / "{RecordNumber}" (any case), or null.</summary>
+        internal static string SpecialField(string name)
+        {
+            var n = Norm(name, null);
+            return n != null && SpecialFields.ContainsKey(n) ? SpecialFields.Keys.First(k => Eq(k, n)) : null;
+        }
+
+        /// <summary>
+        /// What a field object or embedded field binds to: the formula form of a database field, formula, parameter...,
+        /// or the bare name of a special field. A running total is bound through a formula of the same name
+        /// (created when missing): field objects bound to a running total created through RAS make the report
+        /// unsaveable ("No error" from SaveAs). via = (running total, note) in that case.
+        /// </summary>
+        private static (string Source, DD.CrFieldValueTypeEnum Type, Tuple<string, string> Via) FieldSource(Ras ras, string field)
+        {
+            if (string.IsNullOrWhiteSpace(field)) throw new ToolError("field is required.");
+            var special = SpecialField(field);
+            if (special != null) return (special, SpecialFields[special], null);
+
+            var f = ras.Field(field);
+            if (f.Kind != DD.CrFieldKindEnum.crFieldKindRunningTotalField) return (f.FormulaForm, f.Type, null);
+
+            var wrapper = RunningTotalFormula(ras, f);
+            return (wrapper.FormulaForm, wrapper.Type, Tuple.Create(f.FormulaForm,
+                $"Bound through formula {wrapper.FormulaForm} (= {f.FormulaForm}); the runtime cannot save field objects bound to a running total directly."));
+        }
+
+        /// <summary>The formula {@Name} whose text is {#Name}; created when missing.</summary>
+        private static DD.ISCRField RunningTotalFormula(Ras ras, DD.ISCRField rt)
+        {
+            DD.ISCRField Find() => ras.DataDef.DataDefinition.FormulaFields.Cast<DD.ISCRField>().FirstOrDefault(x => Eq(x.Name, rt.Name));
+            var existing = Find();
+            if (existing == null)
+            {
+                ras.DataDef.FormulaFieldController.Add(new DD.FormulaField { Name = rt.Name, Text = rt.FormulaForm, Syntax = DD.CrFormulaSyntaxEnum.crFormulaSyntaxCrystal });
+                return Find();
+            }
+            if (!Eq(((DD.FormulaField)existing).Text, rt.FormulaForm))
+                throw new ToolError($"Running totals are placed through a formula {{@{rt.Name}}} = {rt.FormulaForm}, but a formula {{@{rt.Name}}} with other text exists. " +
+                                    $"Create one yourself (set_formula with text {rt.FormulaForm}) and place that.");
+            return existing;
+        }
+
+        // ---------- text with embedded fields ----------
+
+        private static readonly System.Text.RegularExpressions.Regex Placeholder = new System.Text.RegularExpressions.Regex(@"\{[^{}]+\}");
+
+        /// <summary>Splits "Shift : {Table.Shift}" into text and field paragraph elements.</summary>
+        private static RD.ParagraphElements TextElements(Ras ras, string text, RD.FontColor font, JArray fields)
+        {
+            var elements = new RD.ParagraphElements();
+            void AddText(string s)
+            {
+                if (s.Length == 0) return;
+                var t = new RD.ParagraphTextElement { Text = s, Kind = RD.CrParagraphElementKindEnum.crParagraphElementKindText };
+                if (font != null) t.FontColor = font.Clone(true);
+                elements.Add(t);
+            }
+            int pos = 0;
+            foreach (System.Text.RegularExpressions.Match m in Placeholder.Matches(text))
+            {
+                AddText(text.Substring(pos, m.Index - pos));
+                var (source, _, _) = FieldSource(ras, m.Value);
+                var f = new RD.ParagraphFieldElement { DataSource = source, Kind = RD.CrParagraphElementKindEnum.crParagraphElementKindField };
+                if (font != null) f.FontColor = font.Clone(true);
+                elements.Add(f);
+                fields.Add(source);
+                pos = m.Index + m.Length;
+            }
+            AddText(text.Substring(pos));
+            return elements;
+        }
+
+        private static JToken SetTextWithFields(JObject a) => Edit(a, main =>
+        {
+            var ras = Ras.For(main, Sub(a));
+            var text = (string)a["text"] ?? throw new ToolError("text is required.");
+            var fields = new JArray();
+            var name = (string)a["object"];
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                if (!(ras.Object(name) is RD.TextObject old)) throw new ToolError($"'{name}' is not a text object.");
+                var clone = (RD.TextObject)old.Clone(true);
+                // Keep the first paragraph (alignment, indents) and the font of its first element.
+                var first = clone.Paragraphs.Count > 0 ? (RD.Paragraph)clone.Paragraphs[0] : new RD.Paragraph();
+                var font = first.ParagraphElements?.Cast<RD.ISCRParagraphElement>().Select(e => e.FontColor).FirstOrDefault(fc => fc != null) ?? clone.FontColor;
+                first.ParagraphElements = TextElements(ras, text, font, fields);
+                var paragraphs = new RD.Paragraphs();
+                paragraphs.Add(first);
+                clone.Paragraphs = paragraphs;
+                ras.ReportDef.ReportObjectController.Modify(old, clone);
+                return new JObject { ["object"] = old.Name, ["action"] = "updated", ["text"] = text, ["fields"] = fields };
+            }
+
+            if (string.IsNullOrWhiteSpace((string)a["section"]) || a["left"] == null || a["top"] == null || a["width"] == null || a["height"] == null)
+                throw new ToolError("To create a new text object give section, left, top, width and height (or give object to change an existing one).");
+            var section = ras.Section((string)a["section"]);
+            var ps = new RD.Paragraphs();
+            ps.Add(new RD.Paragraph { ParagraphElements = TextElements(ras, text, null, fields) });
+            var obj = new RD.TextObject { Paragraphs = ps };
+            Place(obj, a);
+            var res = AddObject(ras, obj, section);
+            res["text"] = text;
+            res["fields"] = fields;
             return res;
         });
 

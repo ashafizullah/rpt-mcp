@@ -57,7 +57,8 @@ namespace RptMcp
                     ["paper_size"] = po.PaperSize.ToString(),
                     ["orientation"] = po.PaperOrientation.ToString(),
                     ["printer"] = po.PrinterName,
-                    ["margins_twips"] = new JObject { ["left"] = m.leftMargin, ["top"] = m.topMargin, ["right"] = m.rightMargin, ["bottom"] = m.bottomMargin }
+                    ["margins_twips"] = new JObject { ["left"] = m.leftMargin, ["top"] = m.topMargin, ["right"] = m.rightMargin, ["bottom"] = m.bottomMargin },
+                    ["content_twips"] = $"{po.PageContentWidth}x{po.PageContentHeight}"
                 };
                 o["subreports"] = new JArray(rd.Subreports.Cast<E.ReportDocument>().Select(s => s.Name));
             }
@@ -171,6 +172,7 @@ namespace RptMcp
                     break;
                 case E.FieldObject f:
                     o["field"] = f.DataSource?.FormulaName;
+                    if (SpecialField(f.DataSource?.FormulaName) != null) o["special"] = true;
                     o["font"] = FontText(f.Font, f.Color);
                     break;
                 case E.SubreportObject s:

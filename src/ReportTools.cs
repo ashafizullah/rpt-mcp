@@ -90,10 +90,75 @@ namespace RptMcp
                 }),
                 AddParameter);
 
+            r.Add("set_parameter",
+                "Change an existing parameter in place (prompt, type, multiple values, default values), keeping every formula and object that uses it. " +
+                "Default values are the choices offered in the prompt; export_report still needs the parameter values.",
+                Schema(new[]
+                {
+                    PathArg, Req("name", "string", "Parameter name, with or without {? }."),
+                    Opt("prompt", "string", "New prompt text."),
+                    Enum("type", "New value type (refused while the parameter is used, unless force=true).", false, "string", "number", "currency", "boolean", "date", "datetime", "time"),
+                    Opt("allow_multiple", "boolean", "Allow multiple values."),
+                    Opt("default_values", "string[]", "New default values ([] removes them)."),
+                    Opt("force", "boolean", "Allow changing the type of a parameter that is in use."),
+                    SubArg, OutArg
+                }),
+                SetParameter);
+
             r.Add("delete_parameter", "Delete a report parameter. Refused while it is used anywhere (field objects, fields embedded in text objects, formulas, selection formulas, conditional formulas, groups, sorts, SQL commands), unless force=true.",
                 Schema(PathArg, Req("name", "string", "Parameter name."),
                        Opt("force", "boolean", "Delete anyway; objects bound to it are deleted too."), SubArg, OutArg),
                 DeleteParameter);
+
+            r.Add("add_group",
+                "Group the report on a field, e.g. per shift or per day. Crystal adds a Group Header and Group Footer section (named after the field, " +
+                "e.g. ShiftHeaderSection1 / ShiftFooterSection1); their names are returned so objects can be placed there. " +
+                "For a subtotal put a formula like Sum({T.Qty}, {T.Shift}) in the group footer.",
+                Schema(PathArg, Req("field", "string", "Field to group on, e.g. {Orders.Shift}."),
+                       Opt("index", "integer", "Group position: 0 = outermost (default: after the existing groups, i.e. innermost)."),
+                       Enum("date_condition", "Date/time fields only: one group per ... (default daily; second for time fields).", false,
+                            "daily", "weekly", "biweekly", "semimonthly", "monthly", "quarterly", "semiannually", "annually", "second", "minute", "hour", "ampm"),
+                       Enum("direction", "Group order (default ascending).", false, "ascending", "descending"),
+                       SubArg, OutArg),
+                AddGroup);
+
+            r.Add("delete_group",
+                "Remove a group with its header and footer sections. Refused while those sections hold objects or formulas/running totals summarize per this group, unless force=true.",
+                Schema(PathArg, Req("field", "string", "Field the group is on, e.g. {Orders.Shift}."),
+                       Opt("force", "boolean", "Delete the objects in its sections too; per-group summaries will break."), SubArg, OutArg),
+                DeleteGroup);
+
+            r.Add("add_sort",
+                "Sort the records by a field (record sort), e.g. newest first. Without groups this orders the details; with groups it orders the records inside each group. " +
+                "On a field that is already sorted (including a group's own field) it changes the direction.",
+                Schema(PathArg, Req("field", "string", "Field to sort on, e.g. {Orders.Date}."),
+                       Enum("direction", "Direction (default ascending).", false, "ascending", "descending"),
+                       Opt("index", "integer", "Position among the record sorts, 0 = first (default: last)."),
+                       SubArg, OutArg),
+                AddSort);
+
+            r.Add("delete_sort", "Remove a record sort. A group's sort is removed with delete_group.",
+                Schema(PathArg, Req("field", "string", "Sorted field, e.g. {Orders.Date}."), SubArg, OutArg),
+                DeleteSort);
+
+            r.Add("add_running_total",
+                "Create a running total field {#Name}: an accumulating sum/count/... that can be evaluated conditionally and reset per group, field change or formula. " +
+                "For a plain subtotal per group a formula like Sum({T.Qty}, {T.Group}) is simpler. Place it with add_field_object field {#Name}.",
+                Schema(PathArg, Req("name", "string", "Running total name (without {# })."),
+                       Req("field", "string", "Field to summarize, e.g. {Orders.Qty}."),
+                       Enum("operation", "Summary operation (default sum).", false, "sum", "count", "distinct_count", "average", "min", "max"),
+                       Enum("evaluate", "When a record is counted (default each_record).", false, "each_record", "on_change_of_field", "on_change_of_group", "on_formula"),
+                       Opt("evaluate_on", "string", "The field (on_change_of_field), the group's field (on_change_of_group) or the Boolean formula (on_formula) for evaluate."),
+                       Enum("reset", "When it starts again from zero (default never).", false, "never", "on_change_of_field", "on_change_of_group", "on_formula"),
+                       Opt("reset_on", "string", "The field, the group's field or the Boolean formula for reset, e.g. {Orders.Shift}."),
+                       SubArg, OutArg),
+                AddRunningTotal);
+
+            r.Add("delete_running_total",
+                "Delete a running total (and the formula add_field_object made to show it). Refused while it is used anywhere, unless force=true.",
+                Schema(PathArg, Req("name", "string", "Running total name."),
+                       Opt("force", "boolean", "Delete anyway; objects showing it are deleted too."), SubArg, OutArg),
+                DeleteRunningTotal);
 
             // ---------- database ----------
             r.Add("set_command_sql",
@@ -135,6 +200,18 @@ namespace RptMcp
                 Schema(PathArg, Req("object", "string", "Object name, e.g. Text12."), Req("text", "string", "New text."), SubArg, OutArg),
                 SetText);
 
+            r.Add("set_text_with_fields",
+                "Set a text object's text with fields embedded in it, e.g. \"Shift : {Orders.Shift}\", \"Page {PageNumber} of {TotalPageCount}\" or " +
+                "\"Period: {?Start} - {?End}\". Every {...} must be a field ({Table.Column}, {@Formula}, {?Param}, {#RunningTotal}) or a special field. " +
+                "Give object to change an existing text object (its font is kept), or section + position to create one. Format the embedded fields with set_field_format + field.",
+                Schema(PathArg, Req("text", "string", "Text with {field} placeholders."),
+                       Opt("object", "string", "Existing text object to change."),
+                       Opt("section", "string", "Section for a new text object."),
+                       Opt("left", "integer", "New object: left (twips)."), Opt("top", "integer", "New object: top (twips)."),
+                       Opt("width", "integer", "New object: width (twips)."), Opt("height", "integer", "New object: height (twips)."),
+                       Opt("name", "string", "New object: name."), SubArg, OutArg),
+                SetTextWithFields);
+
             r.Add("set_object_props", "Change position/size (twips), font, color, alignment, suppress or can-grow of a report object.",
                 Schema(PathArg, Req("object", "string", "Object name."),
                        Opt("left", "integer", "Left (twips)."), Opt("top", "integer", "Top (twips)."),
@@ -162,6 +239,39 @@ namespace RptMcp
                        SubArg, OutArg),
                 SetSectionProps);
 
+            r.Add("add_section",
+                "Add a section to an area, e.g. a second Detail section or an extra Group Footer. Group header/footer areas come from add_group.",
+                Schema(PathArg, Enum("kind", "Area kind; when there are several (e.g. two group footers) pass area instead.", false,
+                                     "report_header", "page_header", "group_header", "detail", "group_footer", "page_footer", "report_footer"),
+                       Opt("area", "string", "Area name (e.g. DetailArea1), or the name of a section in it; overrides kind."),
+                       Opt("index", "integer", "Position within the area, 0 = first (default: last)."),
+                       Opt("height", "integer", "Height in twips (default 300)."), SubArg, OutArg),
+                AddSection);
+
+            r.Add("delete_section",
+                "Delete a section. Refused while it holds objects (or lines/boxes end in it), unless force=true. The only section of an area cannot be deleted; suppress it instead.",
+                Schema(PathArg, Req("section", "string", "Section name."),
+                       Opt("force", "boolean", "Delete its objects too."), SubArg, OutArg),
+                DeleteSection);
+
+            r.Add("move_object",
+                "Move a report object to another section, keeping its name, size, font, formatting and conditional formulas (position too unless left/top are given).",
+                Schema(PathArg, Req("object", "string", "Object name."), Req("section", "string", "Target section."),
+                       Opt("left", "integer", "New left (twips)."), Opt("top", "integer", "New top (twips)."), SubArg, OutArg),
+                MoveObject);
+
+            r.Add("set_page_setup",
+                "Set paper size, orientation and margins of the report (also used when exporting to PDF). Returns the printable width/height to lay out objects with.",
+                Schema(PathArg,
+                       Enum("size", "Paper size.", false, "A3", "A4", "A5", "B4", "B5", "Letter", "Legal", "Tabloid", "Executive", "Folio"),
+                       Enum("orientation", "Orientation (default: keep).", false, "portrait", "landscape"),
+                       Opt("width", "integer", "Custom paper width in twips (with height, instead of size)."),
+                       Opt("height", "integer", "Custom paper height in twips."),
+                       Opt("margin_left", "integer", "Left margin (twips)."), Opt("margin_right", "integer", "Right margin (twips)."),
+                       Opt("margin_top", "integer", "Top margin (twips)."), Opt("margin_bottom", "integer", "Bottom margin (twips)."),
+                       OutArg),
+                SetPageSetup);
+
             r.Add("add_text_object", "Add a text object to a section. Use set_object_props afterwards for font/color/alignment.",
                 Schema(PathArg, Req("section", "string", "Section name."), Req("text", "string", "Text."),
                        Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
@@ -170,8 +280,10 @@ namespace RptMcp
                 AddTextObject);
 
             r.Add("add_field_object",
-                "Add a field object bound to a database field, formula, parameter, SQL expression or running total, e.g. {Orders.OrderNo}, {@Total}, {?StartDate}.",
-                Schema(PathArg, Req("section", "string", "Section name."), Req("field", "string", "Field in formula form, e.g. {Table.Column}."),
+                "Add a field object bound to a database field, formula, parameter, SQL expression or running total, e.g. {Orders.OrderNo}, {@Total}, {?StartDate}, " +
+                "or to a special field: RecordNumber, GroupNumber, PageNumber, TotalPageCount, PageNofM, PrintDate, PrintTime, ModificationDate, ModificationTime, " +
+                "DataDate, DataTime, ReportTitle, ReportComments, FileName, FileAuthor, FileCreationDate, RecordSelection, GroupSelection.",
+                Schema(PathArg, Req("section", "string", "Section name."), Req("field", "string", "Field in formula form, e.g. {Table.Column}, or a special field name, e.g. RecordNumber."),
                        Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
                        Req("width", "integer", "Width (twips)."), Req("height", "integer", "Height (twips)."),
                        Opt("name", "string", "Object name (default: assigned by Crystal)."), SubArg, OutArg),
@@ -264,6 +376,12 @@ namespace RptMcp
                 DeleteObject);
 
             // ---------- run ----------
+            r.Add("verify_database",
+                "Check that the report still matches its database (Crystal's Verify Database), e.g. after set_datasource or a schema change: " +
+                "reports columns the report uses that no longer exist, changed column types, objects Crystal would delete and logon problems. Never changes the file.",
+                Schema(new[] { PathArg }.Concat(LogonArgs("DB logon used for the check")).ToArray()),
+                VerifyDatabase);
+
             r.Add("export_report",
                 "Run the report against the database and export it (PDF is best for visually checking a change). " +
                 "Parameter values: {\"Name\": value} or {\"Name\": [v1, v2]}; for an unlinked subreport parameter use \"Subreport::Name\".",

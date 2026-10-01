@@ -44,7 +44,10 @@ namespace RptMcp.Tests
                 }
                 var names = tools.Select(t => (string)t["name"]).ToList();
                 Assert.Equal(names.Count, names.Distinct().Count());
-                foreach (var expected in new[] { "inspect_report", "batch_edit", "set_field_format", "export_report", "replace_picture", "add_table" })
+                foreach (var expected in new[] { "inspect_report", "batch_edit", "set_field_format", "export_report", "replace_picture", "add_table",
+                                                 "add_group", "delete_group", "add_sort", "delete_sort", "add_running_total", "delete_running_total",
+                                                 "set_parameter", "set_text_with_fields", "add_section", "delete_section", "move_object",
+                                                 "set_page_setup", "verify_database" })
                     Assert.Contains(expected, names);
             }
         }
@@ -144,6 +147,18 @@ namespace RptMcp.Tests
                 var badName = c.Call("add_table", new JObject { ["path"] = @"C:\definitely\missing.rpt", ["table"] = "a.b.c", ["server"] = "srv", ["database"] = "db" });
                 Assert.True(badName.IsError);
                 Assert.Contains("schema.Table", badName.Text);
+            }
+        }
+
+        [Fact]
+        public void New_structure_tools_are_allowed_in_batch_edit()
+        {
+            using (var c = new McpClient())
+            {
+                var batch = (JObject)((JArray)c.Request("tools/list")["result"]["tools"]).Single(t => (string)t["name"] == "batch_edit");
+                foreach (var tool in new[] { "add_group", "add_sort", "add_running_total", "set_parameter", "set_text_with_fields", "add_section", "move_object", "set_page_setup" })
+                    Assert.Contains(tool, (string)batch["description"]);
+                Assert.DoesNotContain("verify_database", (string)batch["description"]);
             }
         }
 
