@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-01
+
 ### Added
 - **`add_table`**: add a database table (OLE DB / ADO, default provider `MSOLEDBSQL`) to a report, including one built from scratch with no data source yet. Crystal reads the column list from the server; the tool returns it so the columns can be placed with `add_field_object`. Also allowed inside `batch_edit`.
 
@@ -42,7 +44,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas, parameters, data sources, field formats, conditional formulas, lines, boxes, pictures), with backups, usage guards, `batch_edit` and `export_report`.
 
-[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ashafizullah/rpt-mcp/releases/tag/v0.1.0
