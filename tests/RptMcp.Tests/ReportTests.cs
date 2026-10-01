@@ -294,6 +294,27 @@ namespace RptMcp.Tests
         }
 
         [SkippableFact]
+        public void Condition_formula_on_a_section_round_trips()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var section = ((JObject)c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"]).Properties().First().Name;
+                var r = c.CallOk("set_condition_formula", new JObject { ["path"] = _report, ["section"] = section, ["condition"] = "Format.EnableSuppress", ["formula"] = "PageNumber > 1" });
+                Assert.Equal(section, (string)r["section"]);
+                var conds = c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"][section]["conditions"];
+                Assert.Equal("PageNumber > 1", (string)conds["Format.EnableSuppress"]);
+
+                c.CallOk("set_condition_formula", new JObject { ["path"] = _report, ["section"] = section, ["condition"] = "Format.EnableSuppress", ["formula"] = "" });
+                Assert.Null(c.CallOk("inspect_report", new JObject { ["path"] = _report })["sections"][section]["conditions"]?["Format.EnableSuppress"]);
+
+                // A set_formula without text must not silently create an empty formula.
+                var (isError, _) = c.Call("set_formula", new JObject { ["path"] = _report, ["name"] = "RptMcpNoText", ["formula"] = "1" });
+                Assert.True(isError);
+            }
+        }
+
+        [SkippableFact]
         public void Export_to_png_and_jpg_renders_pages()
         {
             RequireReport();

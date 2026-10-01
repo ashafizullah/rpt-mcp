@@ -96,7 +96,8 @@ namespace RptMcp
         private static JToken SetFormula(JObject a) => Edit(a, main =>
         {
             var name = Norm((string)a["name"], "@");
-            var text = (string)a["text"] ?? "";
+            // Missing text is an error, not an empty formula (a misnamed argument would otherwise blank it silently).
+            var text = (string)a["text"] ?? throw new ToolError("text is required (the formula text; \"\" for an empty formula).");
             var rd = ReportIO.Scope(main, Sub(a));
             var existing = rd.DataDefinition.FormulaFields.Cast<E.FormulaFieldDefinition>().FirstOrDefault(f => Eq(f.Name, name));
             if (existing != null)

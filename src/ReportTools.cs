@@ -345,11 +345,13 @@ namespace RptMcp
                 SetFieldFormat);
 
             r.Add("set_condition_formula",
-                "Set or clear (empty formula) a conditional formula on a report object, e.g. suppress when a value is empty. " +
+                "Set or clear (empty formula) a conditional formula on a report object or a section, e.g. suppress when a value is empty. " +
                 "condition uses the same paths inspect_report shows: Format.EnableSuppress, Format.DisplayString, Format.HorizontalAlignment, " +
                 "Format.ToolTipText, Format.Hyperlink, FontColor.Color, FontColor.Style, FontColor.Size, Border.BackgroundColor, Border.BorderColor, " +
-                "FieldFormat.NumericFormat.NDecimalPlaces, FieldFormat.CommonFormat.SuppressIfDuplicated, …",
-                Schema(PathArg, Req("object", "string", "Object name."),
+                "FieldFormat.NumericFormat.NDecimalPlaces, FieldFormat.CommonFormat.SuppressIfDuplicated, …; for a section e.g. Format.EnableSuppress, " +
+                "Format.EnableNewPageBefore, Format.BackgroundColor. Crystal ignores conditional suppress on lines and boxes: suppress their section instead.",
+                Schema(PathArg, Opt("object", "string", "Object name (or give section)."),
+                       Opt("section", "string", "Section name, to set a condition on the section itself."),
                        Req("condition", "string", "Condition path, e.g. Format.EnableSuppress."),
                        Req("formula", "string", "Crystal formula, e.g. IsNull({T.Col}) or {T.Col} = \"\". Use crRed etc. for colors. \"\" clears it."),
                        SubArg, OutArg),
