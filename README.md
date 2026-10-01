@@ -1,5 +1,7 @@
 # rpt-mcp
 
+**English** | [中文](README.zh-CN.md)
+
 [![CI](https://github.com/ashafizullah/rpt-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ashafizullah/rpt-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ashafizullah/rpt-mcp)](https://github.com/ashafizullah/rpt-mcp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
