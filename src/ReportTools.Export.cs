@@ -194,8 +194,20 @@ namespace RptMcp
             }
 
             object val = value is JArray arr ? arr.Select(Convert).ToArray() : Convert(value);
-            if (sub == null) rd.SetParameterValue(def.Name, val);
-            else rd.SetParameterValue(def.Name, val, sub);
+            if (sub == null) { rd.SetParameterValue(def.Name, val); return; }
+            rd.SetParameterValue(def.Name, val, sub);
+            // The value of a subreport parameter is kept in the subreport's own document; setting it
+            // only through the main report leaves the parameter empty and the export fails.
+            try
+            {
+                foreach (E.ReportDocument s in rd.Subreports)
+                    if (Eq(s.Name, sub))
+                    {
+                        s.SetParameterValue(def.Name, val);
+                        break;
+                    }
+            }
+            catch { /* the parameter may only exist in the main report's list */ }
         }
 
         /// <summary>
@@ -233,18 +245,26 @@ namespace RptMcp
         }
 
         /// <summary>
-        /// The parameters that still have no value, main report and subreports alike. A subreport
-        /// parameter is shown as "Subreport::Name", the way export_report accepts it.
+        /// The parameters that still have no value. A linked parameter takes its value from the main
+        /// report (the runtime fills it in), so it is not missing. A subreport parameter is shown as
+        /// "Subreport::Name", the way export_report accepts it.
         /// </summary>
         private static List<string> MissingParameters(E.ReportDocument rd)
         {
             var missing = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             void Check(E.ParameterFieldDefinition def)
             {
+                if (def == null) return;
+                if (def.IsLinked()) return; // filled in from the main report
                 var has = def.CurrentValues != null && def.CurrentValues.Count > 0;
                 if (has) return;
-                missing.Add(string.IsNullOrEmpty(def.ReportName) ? def.Name : $"{def.ReportName}::{def.Name}");
+                var key = (string.IsNullOrEmpty(def.ReportName) ? "" : def.ReportName + "::") + def.Name;
+                if (seen.Add(key)) missing.Add(key);
             }
+
+            // The main report's list also holds the parameters of its subreports (with ReportName set).
             foreach (var p in rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()) Check(p);
             try
             {

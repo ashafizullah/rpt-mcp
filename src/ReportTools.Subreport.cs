@@ -93,7 +93,7 @@ namespace RptMcp
                 // Default: the subreport field or parameter with the same name.
                 var subField = subRas.Field(string.IsNullOrWhiteSpace((string)o["sub"]) ? mainForm : (string)o["sub"]);
                 bool subIsParam = subField.Kind == DD.CrFieldKindEnum.crFieldKindParameterField;
-                if (subIsParam && subField.Type != mainField.Type)
+                if (subIsParam && !SameType(mainField.Type, subField.Type))
                     throw new ToolError($"{mainForm} is {TypeText(mainField.Type)} but the subreport's {subField.FormulaForm} is {TypeText(subField.Type)}.");
 
                 // Crystal's own naming for the parameter behind a field link.
@@ -123,6 +123,28 @@ namespace RptMcp
             if (selection != (dd.RecordSelectionFormula ?? "")) dd.RecordSelectionFormula = selection;
 
             return LinkList(main, name);
+        }
+
+        /// <summary>
+        /// Whether a main report field can feed a subreport parameter of another type. The numeric
+        /// kinds are interchangeable (an int32 column can feed a "number" parameter), the rest are not.
+        /// </summary>
+        private static bool SameType(DD.CrFieldValueTypeEnum main, DD.CrFieldValueTypeEnum sub)
+        {
+            if (main == sub) return true;
+            bool Numeric(DD.CrFieldValueTypeEnum t) =>
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeNumberField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeDecimalField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeCurrencyField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt16sField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt32sField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt64sField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt16uField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt32uField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt64uField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt8sField ||
+                t == DD.CrFieldValueTypeEnum.crFieldValueTypeInt8uField;
+            return Numeric(main) && Numeric(sub);
         }
 
         private static string WithoutClause(string selection, string clause)

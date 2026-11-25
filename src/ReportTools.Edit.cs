@@ -394,10 +394,14 @@ namespace RptMcp
             var alias = string.IsNullOrWhiteSpace((string)a["alias"]) ? name : ((string)a["alias"]).Trim();
             var provider = string.IsNullOrWhiteSpace((string)a["provider"]) ? "MSOLEDBSQL" : ((string)a["provider"]).Trim();
 
-            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider, (string)a["copy_connection_from"]));
+            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider, (string)a["copy_connection_from"], main));
         }
 
-        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider, string copyFrom)
+        /// <summary>Finds a table of the main report by alias (used to copy a connection into a subreport).</summary>
+        private static DD.Table MainTable(E.ReportDocument main, string alias) =>
+            Ras.For(main, null).Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
+
+        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider, string copyFrom, E.ReportDocument main)
         {
             var existing = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
             if (existing != null)
@@ -410,6 +414,7 @@ namespace RptMcp
                 // reach through the driver already stored in the report (e.g. ODBC/RDO to SAP HANA, which
                 // has no OLE DB provider, so the OLE DB path below cannot work).
                 var source = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, copyFrom))
+                             ?? MainTable(main, copyFrom)
                              ?? throw new ToolError($"No table with alias '{copyFrom}' to copy the connection from.");
                 ci = source.ConnectionInfo;
                 if (ci == null) throw new ToolError($"Table '{copyFrom}' has no connection information to copy.");
