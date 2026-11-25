@@ -4,8 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`add_table` with `copy_connection_from`**: clones the connection of an existing table verbatim, keeping its driver. Needed for databases Crystal can only reach through the driver already stored in the report — e.g. SAP Business One on HANA, which uses the ODBC (RDO) driver and has no OLE DB provider. The connection string is rewritten to the target server/database.
+- **`set_datasource` with `connection_string`**: replaces the whole ODBC connection string. The ODBC/RDO driver keeps it in a single property, so the report kept using the old server (e.g. the SQL Server of the previous ERP) even after the server and database were changed.
+- **`set_datasource` with `rename_to`**: points a table of the previous ERP at its equivalent in the new one (`{OldTable.X}` becomes `{NewTable.X}`).
+
 ### Fixed
 - **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
+- **`export_report` could not set a subreport parameter**: it was only looked up in the main report's parameter list, but a subreport's parameters live in the subreport. The parameters that still have no value are now listed instead of the bare "missing parameter values" from the runtime.
 - **The build targeted the 32-bit Crystal runtime by default.** The assembly search now prefers the .NET 4 GAC (`v4.0_13.0.4000.0`, 64-bit) and only falls back to the legacy GAC (`13.0.2000.0`) on older SPs, matching the release build.
 
 ## [0.1.6] - 2026-10-01
