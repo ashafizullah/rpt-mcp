@@ -178,19 +178,26 @@ namespace RptMcp
             r.Add("add_table",
                 "Add a database table to the report (OLE DB / ADO, e.g. SQL Server), so its columns can be used in field objects and formulas. " +
                 "Crystal connects to read the column list, so the server must be reachable; the columns are returned. " +
-                "The new table is not linked to existing tables. To repoint tables that are already in the report, use set_datasource.",
+                "The new table is not linked to existing tables. To repoint tables that are already in the report, use set_datasource. " +
+                "For a database Crystal can only reach through a driver already stored in the report (e.g. ODBC/RDO to SAP HANA, " +
+                "which has no OLE DB provider), pass copy_connection_from with the alias of a table to copy that connection from.",
                 Schema(new[] { PathArg, Req("table", "string", "Table name, optionally with schema: 'Orders' or 'dbo.Orders' (schema defaults to dbo)."),
                                Opt("alias", "string", "Alias used in field names, {Alias.Column} (default: the table name)."),
                                Opt("provider", "string", "OLE DB provider (default MSOLEDBSQL; the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
+                               Opt("copy_connection_from", "string", "Alias of an existing table whose connection is copied verbatim (keeps its driver, e.g. ODBC/RDO); OLE DB is not used then."),
                                SubArg, OutArg }
                        .Concat(LogonArgs("server, database and credentials; integrated security when no user is given")).ToArray()),
                 AddTable);
 
             r.Add("set_datasource",
                 "Point tables at another server/database and persist it in the .rpt (e.g. switch a template from a dev to a production database). " +
-                "Applies to the main report and all subreports unless 'subreport' is given.",
+                "Applies to the main report and all subreports unless 'subreport' is given. " +
+                "For ODBC/RDO reports the driver keeps the whole connection in one string: pass connection_string to replace it " +
+                "(e.g. 'DRIVER={B1CRHPROXY};SERVERNODE=SRVSAP:30015;DATABASE=SBODEMOES'), otherwise the old server stays in use.",
                 Schema(new[] { PathArg, Opt("table", "string", "Only this table alias (default all)."),
                                Opt("provider", "string", "OLE DB provider to switch to, e.g. MSOLEDBSQL (the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
+                               Opt("connection_string", "string", "Full ODBC connection string to store, e.g. 'DRIVER={B1CRHPROXY};SERVERNODE=SRVSAP:30015;DATABASE=SBODEMOES'. Keeps the ODBC/RDO driver of the report."),
+                               Opt("rename_to", "string", "New table name/alias, e.g. 'ITM10' to point a table of the previous ERP at its equivalent in the new one ({Old.X} becomes {New.X})."),
                                SubArg, OutArg }
                        .Concat(LogonArgs("target server/database + credentials")).ToArray()),
                 SetDatasource);

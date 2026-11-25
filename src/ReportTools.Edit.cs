@@ -394,42 +394,97 @@ namespace RptMcp
             var alias = string.IsNullOrWhiteSpace((string)a["alias"]) ? name : ((string)a["alias"]).Trim();
             var provider = string.IsNullOrWhiteSpace((string)a["provider"]) ? "MSOLEDBSQL" : ((string)a["provider"]).Trim();
 
-            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider));
+            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider, (string)a["copy_connection_from"]));
         }
 
-        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider)
+        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider, string copyFrom)
         {
             var existing = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
             if (existing != null)
                 throw new ToolError($"The report already has a table with alias '{existing.Alias}'. Pass another 'alias', or use set_datasource to repoint it.");
 
-            // Without the crdb_ado attributes Crystal fails with "Failed to load database information".
-            var integrated = logon.Integrated || string.IsNullOrEmpty(logon.User);
-            var lp = new DD.PropertyBag
+            DD.ConnectionInfo ci;
+            if (!string.IsNullOrWhiteSpace(copyFrom))
             {
-                ["Provider"] = provider,
-                ["Data Source"] = logon.Server,
-                ["Initial Catalog"] = logon.Database,
-                ["Integrated Security"] = integrated,
-                ["Use DSN Default Properties"] = false,
-            };
-            var ci = new DD.ConnectionInfo
-            {
-                Kind = DD.CrConnectionInfoKindEnum.crConnectionInfoKindCRQE,
-                Attributes = new DD.PropertyBag
+                // Reuse the connection of an existing table verbatim. Needed for databases Crystal can only
+                // reach through the driver already stored in the report (e.g. ODBC/RDO to SAP HANA, which
+                // has no OLE DB provider, so the OLE DB path below cannot work).
+                var source = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, copyFrom))
+                             ?? throw new ToolError($"No table with alias '{copyFrom}' to copy the connection from.");
+                ci = source.ConnectionInfo;
+                if (ci == null) throw new ToolError($"Table '{copyFrom}' has no connection information to copy.");
+                // The copy is shared with the source table; give it its own bag before changing anything.
+                ci = new DD.ConnectionInfo
                 {
-                    ["Database DLL"] = "crdb_ado.dll",
-                    ["QE_DatabaseType"] = "OLE DB (ADO)",
-                    ["QE_ServerDescription"] = logon.Server,
-                    ["QE_DatabaseName"] = logon.Database,
-                    ["QE_SQLDB"] = true,
-                    ["SSO Enabled"] = false,
-                    ["QE_LogonProperties"] = lp,
+                    Kind = ci.Kind,
+                    Attributes = new DD.PropertyBag(),
+                    UserName = ci.UserName,
+                    Password = ci.Password,
+                };
+                foreach (var k in source.ConnectionInfo.Attributes.PropertyIDs.Cast<string>())
+                    ci.Attributes[k] = source.ConnectionInfo.Attributes[k];
+                var lp = Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag;
+                if (lp != null)
+                {
+                    var newLp = new DD.PropertyBag();
+                    foreach (var k in lp.PropertyIDs.Cast<string>()) newLp[k] = lp[k];
+                    ci.Attributes["QE_LogonProperties"] = newLp;
                 }
-            };
-            if (!integrated) ApplyCredentials(ci, logon);
+                // The copied connection string still names the old server; point it at the target one.
+                var copiedLp = Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag;
+                if (!string.IsNullOrEmpty(logon.Server) || !string.IsNullOrEmpty(logon.Database))
+                {
+                    var cs = Prop(copiedLp, "Connection String") as string;
+                    if (!string.IsNullOrEmpty(cs))
+                    {
+                        if (!string.IsNullOrEmpty(logon.Database))
+                            cs = System.Text.RegularExpressions.Regex.Replace(cs, @"(?i)(DATABASE|Initial Catalog)\s*=\s*[^;]*", "DATABASE=" + logon.Database);
+                        if (!string.IsNullOrEmpty(logon.Server))
+                            cs = System.Text.RegularExpressions.Regex.Replace(cs, @"(?i)(SERVERNODE|SERVER|Data Source)\s*=\s*[^;]*", "SERVERNODE=" + logon.Server);
+                        SetExisting(copiedLp, cs, "Connection String");
+                        ci.Attributes["QE_ODBCConnectionString"] = cs;
+                    }
+                }
+                if (logon.HasCredentials || !string.IsNullOrEmpty(logon.Server)) ApplyLogonToConnection(ci, logon);
+            }
+            else
+            {
+                // Without the crdb_ado attributes Crystal fails with "Failed to load database information".
+                var integrated = logon.Integrated || string.IsNullOrEmpty(logon.User);
+                var lp = new DD.PropertyBag
+                {
+                    ["Provider"] = provider,
+                    ["Data Source"] = logon.Server,
+                    ["Initial Catalog"] = logon.Database,
+                    ["Integrated Security"] = integrated,
+                    ["Use DSN Default Properties"] = false,
+                };
+                ci = new DD.ConnectionInfo
+                {
+                    Kind = DD.CrConnectionInfoKindEnum.crConnectionInfoKindCRQE,
+                    Attributes = new DD.PropertyBag
+                    {
+                        ["Database DLL"] = "crdb_ado.dll",
+                        ["QE_DatabaseType"] = "OLE DB (ADO)",
+                        ["QE_ServerDescription"] = logon.Server,
+                        ["QE_DatabaseName"] = logon.Database,
+                        ["QE_SQLDB"] = true,
+                        ["SSO Enabled"] = false,
+                        ["QE_LogonProperties"] = lp,
+                    }
+                };
+                if (!integrated) ApplyCredentials(ci, logon);
+            }
 
-            var table = new DD.Table { Name = name, Alias = alias, QualifiedName = $"{logon.Database}.{schema}.{name}", ConnectionInfo = ci };
+            var table = new DD.Table
+            {
+                Name = name,
+                Alias = alias,
+                QualifiedName = string.IsNullOrWhiteSpace(copyFrom)
+                    ? $"{logon.Database}.{schema}.{name}"
+                    : $"{logon.Database}.{name}",
+                ConnectionInfo = ci
+            };
             try
             {
                 // Crystal connects here and reads the column list into DataFields.
@@ -450,10 +505,30 @@ namespace RptMcp
                 ["qualified"] = added.QualifiedName,
                 ["server"] = logon.Server,
                 ["database"] = logon.Database,
-                ["provider"] = provider,
+                ["provider"] = string.IsNullOrWhiteSpace(copyFrom) ? provider : null,
+                ["copied_connection_from"] = string.IsNullOrWhiteSpace(copyFrom) ? null : copyFrom,
                 ["fields"] = new JArray(added.DataFields.Cast<DD.ISCRField>().Select(f => $"{f.FormulaForm}:{f.Type.ToString().Replace("crFieldValueType", "").Replace("Field", "")}")),
                 ["note"] = ras.Db.Database.Tables.Count > 1 ? "The table is not linked to the other tables (Crystal will cross-join them)." : null,
             });
+        }
+
+        /// <summary>Applies the logon (server/database/credentials) to a connection, keeping its driver.</summary>
+        private static void ApplyLogonToConnection(DD.ConnectionInfo ci, ReportIO.Logon l)
+        {
+            if (ci == null || l == null) return;
+            var attrs = ci.Attributes;
+            var lp = Prop2(attrs, "QE_LogonProperties") as DD.PropertyBag;
+            if (!string.IsNullOrEmpty(l.Server))
+            {
+                attrs["QE_ServerDescription"] = l.Server;
+                SetExisting(lp, l.Server, "Data Source", "Server");
+            }
+            if (!string.IsNullOrEmpty(l.Database))
+            {
+                attrs["QE_DatabaseName"] = l.Database;
+                SetExisting(lp, l.Database, "Initial Catalog", "Database");
+            }
+            ApplyCredentials(ci, l);
         }
 
         private static JToken SetDatasource(JObject a) => Edit(a, main =>
@@ -485,6 +560,15 @@ namespace RptMcp
                         attrs["QE_ServerDescription"] = logon.Server;
                         SetExisting(lp, logon.Server, "Data Source", "Server");
                     }
+                    // The ODBC/RDO driver keeps the whole connection string in one property; when the
+                    // report points at a different database the string has to be replaced, otherwise
+                    // Crystal keeps using the old server (e.g. the SQL Server of the previous ERP).
+                    var connStr = (string)a["connection_string"];
+                    if (!string.IsNullOrWhiteSpace(connStr))
+                    {
+                        SetExisting(lp, connStr, "Connection String");
+                        attrs["QE_ODBCConnectionString"] = connStr;
+                    }
                     if (!string.IsNullOrEmpty(logon.Database))
                     {
                         attrs["QE_DatabaseName"] = logon.Database;
@@ -493,6 +577,21 @@ namespace RptMcp
                         if (!(nt is DD.CommandTable) && !string.IsNullOrEmpty(oldDb) && nt.QualifiedName != null &&
                             nt.QualifiedName.StartsWith(oldDb + ".", StringComparison.OrdinalIgnoreCase))
                             nt.QualifiedName = logon.Database + nt.QualifiedName.Substring(oldDb.Length);
+                    }
+                    // Rename the table itself, e.g. to point a table of the previous ERP at its
+                    // equivalent in the new one ({OldTable.X} -> {NewTable.X}).
+                    var renameTo = (string)a["rename_to"];
+                    if (!string.IsNullOrWhiteSpace(renameTo))
+                    {
+                        if (nt is DD.CommandTable)
+                            throw new ToolError($"Table '{t.Alias}' is a SQL command and cannot be renamed.");
+                        var newName = renameTo.Trim();
+                        var clash = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(x => Eq(x.Alias, newName));
+                        if (clash != null)
+                            throw new ToolError($"The report already has a table with alias '{newName}'.");
+                        nt.Name = newName;
+                        nt.Alias = newName;
+                        nt.QualifiedName = logon.Database + "." + newName;
                     }
                     var provider = (string)a["provider"];
                     if (!string.IsNullOrWhiteSpace(provider))

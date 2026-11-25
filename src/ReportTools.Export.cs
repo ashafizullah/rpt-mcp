@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.IO;
@@ -32,6 +33,13 @@ namespace RptMcp
                 if (a["parameters"] is JObject ps)
                     foreach (var p in ps.Properties())
                         SetParameter(rd, p.Name, p.Value);
+
+                // Subreport parameters that were not given a value still have to be answered, otherwise
+                // the export stops with "missing parameter values". Report which ones are missing.
+                var missing = MissingParameters(rd);
+                if (missing.Count > 0)
+                    throw new ToolError($"Missing parameter values: {string.Join(", ", missing)}. " +
+                        "Give them in 'parameters', using 'Subreport::Name' for a subreport parameter.");
 
                 Directory.CreateDirectory(Path.GetDirectoryName(output));
                 if (image == null)
@@ -168,10 +176,8 @@ namespace RptMcp
             if (sep > 0) { sub = key.Substring(0, sep); name = key.Substring(sep + 2); }
             name = Norm(name, "?");
 
-            var def = rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()
-                .FirstOrDefault(p => Eq(p.Name, name) && (sub == null ? string.IsNullOrEmpty(p.ReportName) : Eq(p.ReportName, sub)))
+            var def = FindParameter(rd, sub, name)
                 ?? throw new ToolError($"Parameter '{key}' not found.");
-
             object Convert(JToken v)
             {
                 var s = v.Type == JTokenType.Date ? ((DateTime)v).ToString("s") : v.ToString();
@@ -190,6 +196,63 @@ namespace RptMcp
             object val = value is JArray arr ? arr.Select(Convert).ToArray() : Convert(value);
             if (sub == null) rd.SetParameterValue(def.Name, val);
             else rd.SetParameterValue(def.Name, val, sub);
+        }
+
+        /// <summary>
+        /// Looks up a parameter in the main report or in a subreport. A subreport parameter is not in
+        /// the main report's parameter list, so the subreport's own definitions are searched too.
+        /// </summary>
+        private static E.ParameterFieldDefinition FindParameter(E.ReportDocument rd, string sub, string name)
+        {
+            if (sub != null)
+            {
+                // The caller named the subreport: look only there.
+                try
+                {
+                    foreach (E.ReportDocument s in rd.Subreports)
+                        if (Eq(s.Name, sub))
+                            foreach (var p in s.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>())
+                                if (Eq(p.Name, name)) return p;
+                }
+                catch { /* fall through to the generic search */ }
+                return null;
+            }
+
+            foreach (var p in rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>())
+                if (Eq(p.Name, name) && string.IsNullOrEmpty(p.ReportName)) return p;
+
+            // No subreport given: a parameter that exists only in a subreport is found by name.
+            try
+            {
+                foreach (E.ReportDocument s in rd.Subreports)
+                    foreach (var p in s.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>())
+                        if (Eq(p.Name, name)) return p;
+            }
+            catch { /* the subreport list may be broken */ }
+            return null;
+        }
+
+        /// <summary>
+        /// The parameters that still have no value, main report and subreports alike. A subreport
+        /// parameter is shown as "Subreport::Name", the way export_report accepts it.
+        /// </summary>
+        private static List<string> MissingParameters(E.ReportDocument rd)
+        {
+            var missing = new List<string>();
+            void Check(E.ParameterFieldDefinition def)
+            {
+                var has = def.CurrentValues != null && def.CurrentValues.Count > 0;
+                if (has) return;
+                missing.Add(string.IsNullOrEmpty(def.ReportName) ? def.Name : $"{def.ReportName}::{def.Name}");
+            }
+            foreach (var p in rd.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()) Check(p);
+            try
+            {
+                foreach (E.ReportDocument sub in rd.Subreports)
+                    foreach (var p in sub.DataDefinition.ParameterFields.Cast<E.ParameterFieldDefinition>()) Check(p);
+            }
+            catch { /* the subreport list may be broken; the export reports it */ }
+            return missing;
         }
     }
 }
