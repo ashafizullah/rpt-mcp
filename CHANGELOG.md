@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
+- **The build targeted the 32-bit Crystal runtime by default.** The assembly search now prefers the .NET 4 GAC (`v4.0_13.0.4000.0`, 64-bit) and only falls back to the legacy GAC (`13.0.2000.0`) on older SPs, matching the release build.
+
 ## [0.1.6] - 2026-10-01
 
 ### Added

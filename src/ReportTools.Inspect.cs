@@ -121,11 +121,14 @@ namespace RptMcp
                 ? ras.Objects().OfType<RD.FieldObject>().ToDictionary(f => f.Name, f => FormatText(f.FieldFormat, f.FieldValueType.ToString()), StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>();
             // Fields embedded in text objects carry their own format.
+            // A text object may embed the same field more than once (e.g. {CRD1.City} twice); JObject
+            // rejects duplicate property names, so the entries are de-duplicated by data source first.
             var embedded = objects
                 ? ras.Objects().OfType<RD.TextObject>()
                     .Select(t => new { t.Name, Fields = EmbeddedFields(t) }).Where(x => x.Fields.Count > 0)
-                    .ToDictionary(x => x.Name, x => new JObject(x.Fields.Select(e => new JProperty(e.DataSource,
-                        FormatText(e.FieldFormat, FieldTypeName(ras, e.DataSource)) ?? "default"))), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(x => x.Name, x => new JObject(x.Fields
+                        .GroupBy(e => e.DataSource ?? "", StringComparer.OrdinalIgnoreCase)
+                        .Select(g => new JProperty(g.Key, FormatText(g.First().FieldFormat, FieldTypeName(ras, g.Key)) ?? "default"))), StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, JObject>();
 
             var sections = new JObject();
