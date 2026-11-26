@@ -638,6 +638,64 @@ namespace RptMcp
             ApplyCredentials(ci, l);
         }
 
+        /// <summary>
+        /// Replaces a table by a SQL command table with the same alias. The report keeps every
+        /// {Table.Field} reference, so a view of the previous ERP can be migrated to a query over
+        /// the new database without touching the formulas, the objects and the groups.
+        /// </summary>
+        private static JToken ReplaceTableWithSql(JObject a) => Edit(a, main =>
+        {
+            var logon = ReportIO.GetLogon(a);
+            var ras = Ras.For(main, Sub(a));
+            var alias = (string)a["table"];
+            var target = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias))
+                         ?? throw new ToolError($"Table '{alias}' not found.");
+
+            // The command table takes over the alias of the table it replaces.
+            var cmd = new DD.CommandTable
+            {
+                Name = target.Alias,
+                Alias = target.Alias,
+                CommandText = (string)a["sql"],
+                ConnectionInfo = target.ConnectionInfo,
+            };
+            if (cmd.ConnectionInfo != null)
+            {
+                // The connection of the old table still names the old server (e.g. the SQL Server of
+                // the previous ERP); rewrite it, or the query would run against the dead database.
+                var attrs = cmd.ConnectionInfo.Attributes;
+                var lp = Prop2(attrs, "QE_LogonProperties") as DD.PropertyBag;
+                var connStr = (string)a["connection_string"];
+                if (!string.IsNullOrWhiteSpace(connStr))
+                {
+                    SetExisting(lp, connStr, "Connection String");
+                    attrs["QE_ODBCConnectionString"] = connStr;
+                }
+                if (!string.IsNullOrEmpty(logon.Server))
+                {
+                    attrs["QE_ServerDescription"] = logon.Server;
+                    SetExisting(lp, logon.Server, "Data Source", "Server");
+                }
+                if (!string.IsNullOrEmpty(logon.Database))
+                {
+                    attrs["QE_DatabaseName"] = logon.Database;
+                    SetExisting(lp, logon.Database, "Initial Catalog", "Database");
+                }
+                ApplyCredentials(cmd.ConnectionInfo, logon);
+            }
+
+            ras.Db.SetTableLocation(target, cmd);
+            var added = ras.Db.Database.Tables.Cast<DD.Table>().First(t => Eq(t.Alias, alias));
+            return Compact(new JObject
+            {
+                ["table"] = added.Alias,
+                ["replaced"] = true,
+                ["sql"] = (string)a["sql"],
+                ["fields"] = new JArray(added.DataFields.Cast<DD.ISCRField>()
+                    .Select(f => $"{f.Name}:{f.Type.ToString().Replace("crFieldValueType", "").Replace("Field", "")}")),
+            });
+        });
+
         private static JToken SetDatasource(JObject a) => Edit(a, main =>
         {
             var logon = ReportIO.GetLogon(a);

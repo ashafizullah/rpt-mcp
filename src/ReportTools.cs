@@ -217,6 +217,20 @@ namespace RptMcp
                        .Concat(LogonArgs("target server/database + credentials")).ToArray()),
                 SetDatasource);
 
+            r.Add("replace_table_with_sql",
+                "Replace an existing table of the report by a SQL command table with the SAME alias, so that every " +
+                "{Table.Field} reference in the report keeps working. Use it to migrate a view of the previous ERP " +
+                "to a query over the new database while keeping the report's formulas and objects untouched. " +
+                "The SQL must return the columns the report uses (alias them to the legacy names). " +
+                "The table keeps its links; the field list is replaced by the columns of the query.",
+                Schema(new[] { PathArg,
+                               Req("table", "string", "Alias of the table to replace."),
+                               Req("sql", "string", "The query that becomes the new data source of the table."),
+                               Opt("subreport", "string", "Subreport to work on (omit for the main report)."),
+                               OutArg }
+                        .Concat(LogonArgs("server, database and credentials used for the connection")).ToArray()),
+                ReplaceTableWithSql);
+
             r.Add("set_table_link",
                 "Change how two tables of the report are joined. An inner join ('EqualJoin') drops the records of the " +
                 "main table that have no matching row in the joined one, which is why a report can come out empty even " +
