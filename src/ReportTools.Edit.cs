@@ -805,6 +805,13 @@ namespace RptMcp
             if (ci == null || l == null || l.Integrated || string.IsNullOrEmpty(l.User)) return;
             ci.UserName = l.User;
             ci.Password = l.Password ?? "";
+            // Los informes del ERP antiguo (SQL Server) guardaban "Trusted_Connection=True",
+            // es decir, autenticacion de Windows. Ese atributo no existe en los drivers ODBC
+            // de SAP B1 y hace que la conexion falle con "No se pudo conectar con la base de
+            // datos": hay que desactivarlo en cuanto se dan usuario y clave.
+            var attrs = ci.Attributes;
+            var lp = Prop2(attrs, "QE_LogonProperties") as DD.PropertyBag;
+            SetExisting(lp, "False", "Trusted_Connection");
         }
 
         // ---------- layout: engine ----------
