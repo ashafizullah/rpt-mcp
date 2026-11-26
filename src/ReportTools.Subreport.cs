@@ -132,47 +132,36 @@ namespace RptMcp
             var dstTable = dstFields[0].Split('.')[0];
 
             var join = ((string)a["join"] ?? "").Trim().ToLowerInvariant();
-            if (join == "none" || join == "remove")
-            {
-                // Drop the link between the two tables. The designer derives the links from the
-                // joins, so both collections have to change, and the way they are stored matters:
-                // TableLinks is rebuilt and assigned, TableJoins is emptied and refilled.
-                var db0 = ras.Db.Database;
-                var links0 = new DD.TableLinks();
-                foreach (var l in db0.TableLinks.Cast<DD.TableLink>())
-                    if (!SamePair(l.SourceTableAlias, l.TargetTableAlias, srcTable, dstTable))
-                        links0.Add(l);
-                db0.TableLinks = links0;
-                var joins0 = db0.TableJoins;
-                var keep = joins0.Cast<DD.TableJoin>()
-                    .Where(j => !SamePair(j.SourceTableAlias, j.TargetTableAlias, srcTable, dstTable))
-                    .Select(j => (DD.TableJoin)j.Clone(true)).ToList();
-                joins0.RemoveAll();
-                foreach (var j in keep) joins0.Add(j);
-                return Compact(new JObject
-                {
-                    ["source"] = source, ["target"] = target, ["join"] = "none", ["removed"] = true,
-                    ["links"] = LinkListOf(db0),
-                });
-            }
-            var joinType = join switch
+            bool remove = join == "none" || join == "remove";
+            var joinType = remove ? DD.CrTableJoinOperatorEnum.crTableJoinOperatorInnerJoin : join switch
             {
                 "inner" or "equal" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorInnerJoin,
                 "left" or "leftouter" or "left_outer" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin,
                 "right" or "rightouter" or "right_outer" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorRightOuterJoin,
                 "outer" or "full" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorFullOuterJoin,
-                _ => throw new ToolError("join must be 'inner' or 'left'."),
+                _ => throw new ToolError("join must be 'inner', 'left' or 'none'."),
             };
 
-            // The designer keeps the join operators in TableJoins and derives the TableLinks from
-            // them, so the operator has to be set in both. The collection has to be assigned back
-            // as a whole: changing an item in place is discarded when the report is saved.
+            // The link between two tables has to be changed through the controller: rebuilding the
+            // TableLinks collection is discarded when the report is saved, because the designer
+            // keeps the link in the tables themselves.
             var db = ras.Db.Database;
-            var joins = db.TableJoins;
-            var current = joins.Cast<DD.TableJoin>().FirstOrDefault(j =>
-                Eq(j.SourceTableAlias, srcTable) && Eq(j.TargetTableAlias, dstTable));
+            var existing = db.TableLinks.Cast<DD.TableLink>()
+                .Where(l => SamePair(l.SourceTableAlias, l.TargetTableAlias, srcTable, dstTable)).ToList();
+            foreach (var l in existing) ras.Db.RemoveTableLink(l);
 
-            if (current == null)
+            // The join (operator and fields) lives in its own collection; the designer derives the
+            // links from it, so it has to be updated as well.
+            var joins = db.TableJoins;
+            var currentIdx = -1;
+            for (int i = 0; i < joins.Count; i++)
+            {
+                var j = (DD.TableJoin)joins[i];
+                if (Eq(j.SourceTableAlias, srcTable) && Eq(j.TargetTableAlias, dstTable)) { currentIdx = i; break; }
+            }
+            if (currentIdx >= 0) joins.Remove(currentIdx);
+
+            if (!remove)
             {
                 var j = new DD.TableJoin
                 {
@@ -191,43 +180,10 @@ namespace RptMcp
                     });
                 j.FieldLinks = fl;
                 joins.Add(j);
-            }
-            else
-            {
-                current.JoinOperator = joinType;
-                // The fields of an existing join have to be replaced too: the designer keeps them in
-                // the join (and from there in the tables), so only the operator would change.
-                var fl = new DD.FieldLinks();
-                for (int i = 0; i < srcFields.Count; i++)
-                    fl.Add(new DD.FieldLink
-                    {
-                        FromField = Field(db, srcTable, srcFields[i]),
-                        ToField = Field(db, dstTable, dstFields[i]),
-                        LinkOperator = DD.CrFieldLinkOperatorEnum.crFieldLinkOperatorEqualLink,
-                    });
-                current.FieldLinks = fl;
-            }
 
-            // Rebuild the links and assign the collection back, otherwise the change is lost on save.
-            // Every link is cloned: re-adding an object that already belongs to the collection drops it.
-            // The field names are stored without the table prefix; with it Crystal builds the
-            // link as "ALIAS.ALIAS.FIELD".
-            var links = new DD.TableLinks();
-            foreach (var l in db.TableLinks.Cast<DD.TableLink>())
-            {
-                var copy = (DD.TableLink)l.Clone(true);
-                if (Eq(l.SourceTableAlias, srcTable) && Eq(l.TargetTableAlias, dstTable))
-                {
-                    copy.JoinType = joinType == DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin
-                        ? DD.CrTableJoinTypeEnum.crTableJoinTypeLeftOuterJoin
-                        : DD.CrTableJoinTypeEnum.crTableJoinTypeEqualJoin;
-                    copy.SourceFieldNames = Strings(srcFields.Select(Bare).ToList());
-                    copy.TargetFieldNames = Strings(dstFields.Select(Bare).ToList());
-                }
-                links.Add(copy);
-            }
-            if (!links.Cast<DD.TableLink>().Any(l => Eq(l.SourceTableAlias, srcTable) && Eq(l.TargetTableAlias, dstTable)))
-                links.Add(new DD.TableLink
+                // The link itself: the field names are stored without the table prefix; with it
+                // Crystal builds the link as "ALIAS.ALIAS.FIELD".
+                var link = new DD.TableLink
                 {
                     SourceTableAlias = srcTable,
                     TargetTableAlias = dstTable,
@@ -236,27 +192,19 @@ namespace RptMcp
                     JoinType = joinType == DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin
                         ? DD.CrTableJoinTypeEnum.crTableJoinTypeLeftOuterJoin
                         : DD.CrTableJoinTypeEnum.crTableJoinTypeEqualJoin,
-                });
-            db.TableLinks = links;
+                };
+                ras.Db.AddTableLink(link);
+            }
 
             return Compact(new JObject
             {
                 ["source"] = source,
                 ["target"] = target,
-                ["join"] = joinType.ToString().Replace("crTableJoinOperator", ""),
-                ["links"] = ReportTools.DescribeLinks(main, Sub(a)),
-                ["table_joins"] = new JArray(joins.Cast<DD.TableJoin>().Select(j => new JObject
-                {
-                    ["source"] = j.SourceTableAlias,
-                    ["target"] = j.TargetTableAlias,
-                    ["operator"] = j.JoinOperator.ToString().Replace("crTableJoinOperator", ""),
-                })),
-                ["table_links"] = new JArray(ras.Db.Database.TableLinks.Cast<DD.TableLink>().Select(l => new JObject
-                {
-                    ["source"] = l.SourceTableAlias,
-                    ["target"] = l.TargetTableAlias,
-                    ["type"] = l.JoinType.ToString().Replace("crTableJoinType", ""),
-                })),
+                ["join"] = remove ? "none" : join,
+                ["removed"] = remove,
+                ["links"] = LinkListOf(db),
+                ["table_joins"] = new JArray(db.TableJoins.Cast<DD.TableJoin>().Select(j =>
+                    new JObject { ["source"] = j.SourceTableAlias, ["target"] = j.TargetTableAlias, ["operator"] = j.JoinOperator.ToString() })),
             });
         });
 

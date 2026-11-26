@@ -618,10 +618,14 @@ namespace RptMcp
                     {
                         attrs["QE_DatabaseName"] = logon.Database;
                         SetExisting(lp, logon.Database, "Initial Catalog", "Database");
-                        // Qualified names look like OldDb.dbo.Table – point them at the new database.
-                        if (!(nt is DD.CommandTable) && !string.IsNullOrEmpty(oldDb) && nt.QualifiedName != null &&
-                            nt.QualifiedName.StartsWith(oldDb + ".", StringComparison.OrdinalIgnoreCase))
-                            nt.QualifiedName = logon.Database + nt.QualifiedName.Substring(oldDb.Length);
+                        // Qualified names look like OldDb.dbo.Table - point them at the new database.
+                        // The database is the first segment, whatever it was called before (the old
+                        // name is not always in QE_DatabaseName, e.g. with the ODBC/RDO driver).
+                        if (!(nt is DD.CommandTable) && !string.IsNullOrEmpty(nt.QualifiedName))
+                        {
+                            var dot = nt.QualifiedName.IndexOf('.');
+                            if (dot > 0) nt.QualifiedName = logon.Database + nt.QualifiedName.Substring(dot);
+                        }
                     }
                     // Rename the table itself, e.g. to point a table of the previous ERP at its
                     // equivalent in the new one ({OldTable.X} -> {NewTable.X}).
