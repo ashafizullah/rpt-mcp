@@ -196,12 +196,65 @@ namespace RptMcp
                 ras.Db.AddTableLink(link);
             }
 
+            // A table that can be reached by two different paths (e.g. CRD1 through ODLN and also
+            // through OCRD) cannot be joined with an outer join: Crystal builds an invalid query and
+            // the report fails with "Error de conector de base de datos". The redundant path is
+            // reported, and dropped when the caller asks for it (drop_conflicts).
+            var dropped = new JArray();
+            var conflicts = new JArray();
+            if (!remove && joinType == DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin)
+            {
+                var others = db.TableLinks.Cast<DD.TableLink>()
+                    .Where(l => !SamePair(l.SourceTableAlias, l.TargetTableAlias, srcTable, dstTable)).ToList();
+                // tables that can be reached from the source without going through the target
+                var reach = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { srcTable };
+                bool grown = true;
+                while (grown)
+                {
+                    grown = false;
+                    foreach (var l in others)
+                    {
+                        if (Eq(l.SourceTableAlias, dstTable) || Eq(l.TargetTableAlias, dstTable)) continue;
+                        if (reach.Contains(l.SourceTableAlias) && reach.Add(l.TargetTableAlias)) grown = true;
+                        if (reach.Contains(l.TargetTableAlias) && reach.Add(l.SourceTableAlias)) grown = true;
+                    }
+                }
+                var conflicting = others.Where(l =>
+                    Eq(l.TargetTableAlias, dstTable) ? reach.Contains(l.SourceTableAlias)
+                    : Eq(l.SourceTableAlias, dstTable) && reach.Contains(l.TargetTableAlias)).ToList();
+                foreach (var l in conflicting)
+                    conflicts.Add($"{l.SourceTableAlias} -> {l.TargetTableAlias}");
+
+                bool drop = (bool?)a["drop_conflicts"] ?? false;
+                if (drop)
+                {
+                    foreach (var l in conflicting)
+                    {
+                        dropped.Add($"{l.SourceTableAlias} -> {l.TargetTableAlias}");
+                        ras.Db.RemoveTableLink(l);
+                    }
+                    if (conflicting.Count > 0)
+                    {
+                        // the join of the dropped path has to go as well
+                        for (int i = joins.Count - 1; i >= 0; i--)
+                        {
+                            var j = (DD.TableJoin)joins[i];
+                            if ((Eq(j.SourceTableAlias, dstTable) || Eq(j.TargetTableAlias, dstTable))
+                                && !Eq(j.SourceTableAlias, srcTable) && !Eq(j.TargetTableAlias, srcTable))
+                                joins.Remove(i);
+                        }
+                    }
+                }
+            }
+
             return Compact(new JObject
             {
                 ["source"] = source,
                 ["target"] = target,
                 ["join"] = remove ? "none" : join,
                 ["removed"] = remove,
+                ["conflicting_links"] = conflicts,
+                ["dropped_links"] = dropped,
                 ["links"] = LinkListOf(db),
                 ["table_joins"] = new JArray(db.TableJoins.Cast<DD.TableJoin>().Select(j =>
                     new JObject { ["source"] = j.SourceTableAlias, ["target"] = j.TargetTableAlias, ["operator"] = j.JoinOperator.ToString() })),

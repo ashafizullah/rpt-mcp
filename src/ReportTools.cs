@@ -179,6 +179,16 @@ namespace RptMcp
                        SubArg, OutArg),
                 RemoveTable);
 
+            r.Add("remove_table_field",
+                "Remove a column from the model of a table (it stops being part of the query). " +
+                "Needed when a column is a reserved word in the database - e.g. ODCI.Import / ODCI.Export in SAP Business One on HANA: " +
+                "Crystal writes the SQL without quoting them and the query fails with 'invalid column name'.",
+                Schema(PathArg, Req("table", "string", "Table alias."),
+                       Req("field", "string", "Column to remove from the model."),
+                       Opt("force", "boolean", "Remove it even if objects use it (the objects bound to it are deleted with it)."),
+                       SubArg, OutArg),
+                RemoveTableField);
+
             r.Add("add_table",
                 "Add a database table to the report (OLE DB / ADO, e.g. SQL Server), so its columns can be used in field objects and formulas. " +
                 "Crystal connects to read the column list, so the server must be reachable; the columns are returned. " +
@@ -187,6 +197,7 @@ namespace RptMcp
                 "which has no OLE DB provider), pass copy_connection_from with the alias of a table to copy that connection from.",
                 Schema(new[] { PathArg, Req("table", "string", "Table name, optionally with schema: 'Orders' or 'dbo.Orders' (schema defaults to dbo)."),
                                Opt("alias", "string", "Alias used in field names, {Alias.Column} (default: the table name)."),
+                                Opt("sql", "string", "Instead of a table: a SQL query. The report uses its result as the data source (a SQL command table). Lets you read a table whose columns are reserved words in the database (Crystal writes the SQL without quoting them) or filter in the database."),
                                Opt("provider", "string", "OLE DB provider (default MSOLEDBSQL; the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
                                Opt("copy_connection_from", "string", "Alias of an existing table whose connection is copied verbatim (keeps its driver, e.g. ODBC/RDO); OLE DB is not used then."),
                                SubArg, OutArg }
@@ -216,6 +227,9 @@ namespace RptMcp
                                Req("source", "string", "Fields of the source table, e.g. 'ODLN.DocEntry' (comma-separated for a composite link)."),
                                Req("target", "string", "Fields of the target table, e.g. 'DLN1.DocEntry' (comma-separated for a composite link)."),
                                Req("join", "string", "Join type: 'inner', 'left' or 'none' (removes the link)."),
+                Opt("drop_conflicts", "boolean", "With a left join: also drop the other links that reach the same table " +
+                       "(a table reachable by two paths cannot be joined with an outer join - Crystal then fails with " +
+                       "'Error de conector de base de datos'). The conflicting links are always reported."),
                                Opt("subreport", "string", "Subreport to work on (omit for the main report)."),
                                OutArg }),
                 SetTableLink);

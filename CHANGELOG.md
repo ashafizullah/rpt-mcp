@@ -11,6 +11,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`set_table_link`**: change how two tables are joined (`inner` / `left`) and on which fields. The link and its operator live in two different collections (`TableJoins` keeps the operator, `TableLinks` the fields) and the designer derives one from the other, so both are written.
 - **`set_table_link` with `join="none"`**: drop the link between two tables.
 - **`remove_table` with `orphaned=true`**: remove a table of a database that no longer exists (e.g. the tables of the previous ERP). Crystal cannot even resolve it - it tries to connect to read its columns - so it is dropped without connecting.
+- **`add_table` with `sql=`**: add a SQL command table - the report uses the result of the query as its data source. The way to read a table whose columns are reserved words in the database (Crystal writes the SQL without quoting them, and the query fails with "invalid column name"), or to filter in the database instead of in the report.
+- **`set_command_sql`**: replace the SQL text of a SQL command table.
+- **`remove_table_field`**: remove a column from the model of a table, so it stops being part of the query (same "reserved word" problem as above).
+- **`set_table_link` with `drop_conflicts=true`**: a table that can be reached by two different paths (e.g. `CRD1` through `ODLN` and also through `OCRD`) cannot be joined with an outer join - Crystal builds an invalid query and the report fails with "Error de conector de base de datos". The links that reach the same table are now reported in `conflicting_links`, and dropped on request.
 
 ### Fixed
 - **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.

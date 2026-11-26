@@ -419,6 +419,34 @@ namespace RptMcp
             }
         }
 
+        /// <summary>
+        /// Removes a column from the model of a table. Needed when a column is a reserved word in the
+        /// database (e.g. ODCI.Import / ODCI.Export in SAP Business One on HANA): Crystal generates
+        /// the SQL without quoting them and the query fails with "invalid column name".
+        /// </summary>
+        private static JToken RemoveTableField(JObject a) => Edit(a, main =>
+        {
+            var ras = Ras.For(main, Sub(a));
+            var alias = (string)a["table"];
+            var field = (string)a["field"];
+            var table = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias))
+                        ?? throw new ToolError($"Table '{alias}' not found.");
+            int idx = -1;
+            for (int i = 0; i < table.DataFields.Count; i++)
+                if (Eq(((DD.ISCRField)table.DataFields[i]).Name, field)) { idx = i; break; }
+            if (idx < 0) throw new ToolError($"Field '{field}' not found in table '{alias}'.");
+
+            var forms = new[] { "{" + alias + "." + field + "}" };
+            var removed = GuardUsage(main, Sub(a), ras, forms, $"Field '{alias}.{field}'", (bool?)a["force"] ?? false);
+            foreach (var name in removed.Values<string>())
+                ras.ReportDef.ReportObjectController.Remove(ras.Object(name));
+
+            // Remove the column from the model in place: setting the table location again would
+            // read the schema and bring it back.
+            table.DataFields.Remove(idx);
+            return new JObject { ["table"] = alias, ["field"] = field, ["action"] = "removed", ["removed_objects"] = removed };
+        });
+
         private static JToken AddTable(JObject a)
         {
             var logon = ReportIO.GetLogon(a);
@@ -434,14 +462,19 @@ namespace RptMcp
             var alias = string.IsNullOrWhiteSpace((string)a["alias"]) ? name : ((string)a["alias"]).Trim();
             var provider = string.IsNullOrWhiteSpace((string)a["provider"]) ? "MSOLEDBSQL" : ((string)a["provider"]).Trim();
 
-            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider, (string)a["copy_connection_from"], main));
+            // A SQL command table: the report uses the result of the query as its data source.
+            // Useful to read from a table with columns that are reserved words in the database
+            // (Crystal writes the SQL without quoting them) or to filter in the database.
+            var sql = ((string)a["sql"] ?? "").Trim();
+
+            return Edit(a, main => AddTable(Ras.For(main, Sub(a)), logon, name, schema, alias, provider, (string)a["copy_connection_from"], main, sql));
         }
 
         /// <summary>Finds a table of the main report by alias (used to copy a connection into a subreport).</summary>
         private static DD.Table MainTable(E.ReportDocument main, string alias) =>
             Ras.For(main, null).Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
 
-        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider, string copyFrom, E.ReportDocument main)
+        private static JObject AddTable(Ras ras, ReportIO.Logon logon, string name, string schema, string alias, string provider, string copyFrom, E.ReportDocument main, string sql = "")
         {
             var existing = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias));
             if (existing != null)
@@ -530,6 +563,35 @@ namespace RptMcp
                     : $"{logon.Database}.{name}",
                 ConnectionInfo = ci
             };
+            if (!string.IsNullOrWhiteSpace(sql))
+            {
+                // A SQL command table: its columns are the ones the query returns.
+                var cmd = new DD.CommandTable
+                {
+                    Name = alias,
+                    Alias = alias,
+                    CommandText = sql,
+                    ConnectionInfo = ci,
+                };
+                try
+                {
+                    ras.Db.AddTable(cmd, null);
+                }
+                catch (System.Runtime.InteropServices.COMException ex)
+                {
+                    throw new ToolError($"Crystal could not add the SQL command table: {ex.Message.Trim()}");
+                }
+                var addedCmd = ras.Db.Database.Tables.Cast<DD.Table>().First(t => Eq(t.Alias, alias));
+                return Compact(new JObject
+                {
+                    ["table"] = addedCmd.Alias,
+                    ["command"] = true,
+                    ["sql"] = sql,
+                    ["server"] = logon.Server,
+                    ["database"] = logon.Database,
+                    ["fields"] = new JArray(addedCmd.DataFields.Cast<DD.ISCRField>().Select(f => $"{f.Name}:{f.Type}")),
+                });
+            }
             try
             {
                 // Crystal connects here and reads the column list into DataFields.
@@ -985,3 +1047,4 @@ namespace RptMcp
         });
     }
 }
+
