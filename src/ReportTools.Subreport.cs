@@ -26,12 +26,6 @@ namespace RptMcp
         private static JToken AddSubreport(JObject a) => Edit(a, main =>
         {
             if (Sub(a) != null) throw new ToolError("Subreports cannot contain subreports; omit subreport.");
-            var source = Path.GetFullPath(Environment.ExpandEnvironmentVariables(((string)a["source_path"] ?? "").Trim().Trim('"')));
-            if (!File.Exists(source) || !source.EndsWith(".rpt", StringComparison.OrdinalIgnoreCase)) throw new ToolError("source_path must be an existing .rpt file: " + source);
-            if (Eq(source, ReportIO.ResolvePath((string)a["path"]))) throw new ToolError("A report cannot import itself; copy it first and import the copy.");
-            var name = string.IsNullOrWhiteSpace((string)a["name"]) ? Path.GetFileName(source) : ((string)a["name"]).Trim();
-            if (SubreportNames(main).Any(n => Eq(n, name))) throw new ToolError($"There is already a subreport named '{name}'. Pass another name.");
-
             var ras = Ras.For(main, null);
             var section = ras.Section((string)a["section"]);
             int left = (int)a["left"], top = (int)a["top"], width = (int)a["width"], height = (int)a["height"];
@@ -39,6 +33,50 @@ namespace RptMcp
             var engineSection = main.ReportDefinition.Sections.Cast<E.Section>().First(s => Eq(s.Name, section.Name));
             var grown = engineSection.Height < top + height;
             if (grown) engineSection.Height = top + height;
+
+            // Insert a subreport that is already embedded in the report again: the same data
+            // definition and the same links, in a new object. It is the way to replace a subreport
+            // object that does not render any more.
+            var reuse = ((string)a["from_subreport"] ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(reuse))
+            {
+                var subName = ExistingSubreport(main, reuse);
+                var newObj = new RD.SubreportObject
+                {
+                    SubreportName = subName,
+                    Left = left,
+                    Top = top,
+                    Width = width,
+                    Height = height,
+                };
+                var nm = ((string)a["name"] ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(nm)) newObj.Name = nm;
+                var before0 = new HashSet<string>(ras.Objects().Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    ras.ReportDef.ReportObjectController.Add(newObj, section, -1);
+                }
+                catch (COMException ex)
+                {
+                    throw new ToolError($"Crystal does not allow adding a subreport object to a report: {ex.Message.Trim()} " +
+                                        "Import the subreport from a .rpt file instead (source_path), which is the only way " +
+                                        "the runtime creates subreport objects.");
+                }
+                var added0 = ras.Objects().Select(o => o.Name).Where(n => !before0.Contains(n)).ToList();
+                return new JObject
+                {
+                    ["subreport"] = subName,
+                    ["object"] = added0.FirstOrDefault() ?? newObj.Name,
+                    ["action"] = "added",
+                    ["reused"] = true,
+                };
+            }
+
+            var source = Path.GetFullPath(Environment.ExpandEnvironmentVariables(((string)a["source_path"] ?? "").Trim().Trim('"')));
+            if (!File.Exists(source) || !source.EndsWith(".rpt", StringComparison.OrdinalIgnoreCase)) throw new ToolError("source_path must be an existing .rpt file: " + source);
+            if (Eq(source, ReportIO.ResolvePath((string)a["path"]))) throw new ToolError("A report cannot import itself; copy it first and import the copy.");
+            var name = string.IsNullOrWhiteSpace((string)a["name"]) ? Path.GetFileName(source) : ((string)a["name"]).Trim();
+            if (SubreportNames(main).Any(n => Eq(n, name))) throw new ToolError($"There is already a subreport named '{name}'. Pass another name.");
 
             var before = new HashSet<string>(ras.Objects().Select(o => o.Name), StringComparer.OrdinalIgnoreCase);
             try { main.ReportClientDocument.SubreportController.ImportSubreportEx(name, source, section, left, top, width, height); }

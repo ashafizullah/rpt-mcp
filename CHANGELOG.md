@@ -22,6 +22,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`remove_table` with `force` wiped the whole subreport** (its formulas and objects): the fallback emptied the fields of the table, and that rewrote the data definition. The links that point at the table are now dropped instead, and only then the table is removed.
 - **A link whose fields no longer exist could not be removed**: Crystal keeps the link in the table's own properties. Recreating the table (`remove_table` + `add_table`) is the way to get rid of it; the formulas and objects that used it have to be recreated as well.
 - **`set_subreport_links` wrote the filter of a field link with the parameter name it expected**, but Crystal may rename the parameter it creates behind the link (`Pm-Orders.Customer??01`) when the name is taken. The filter now uses the name Crystal really used, so the subreport is not filtered by a parameter that is never filled.
+- **`add_subreport` with `from_subreport`**: insert a subreport that is already embedded in the report again (same data definition, same links). The runtime refuses to add a subreport object to a report, so this only works for a report that Crystal imports from a file - the error says so.
 
 ## [0.1.6] - 2026-10-01
 

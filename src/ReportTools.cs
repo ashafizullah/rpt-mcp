@@ -299,9 +299,12 @@ namespace RptMcp
 
             r.Add("add_subreport",
                 "Insert another .rpt as a subreport (Crystal copies it into this report). The runtime cannot create an empty report, so build the " +
-                "subreport as its own .rpt first (e.g. copy a report and trim it with these tools). Link it with links / set_subreport_links so it does not prompt.",
+                "subreport as its own .rpt first (e.g. copy a report and trim it with these tools). Link it with links / set_subreport_links so it does not prompt. " +
+                "With from_subreport the subreport already embedded in the report is inserted again (same data definition, same links), " +
+                "which is also the way to replace a subreport object that no longer renders.",
                 Schema(PathArg, Req("section", "string", "Section of the main report, e.g. ReportFooterSection1 or a group footer."),
-                       Req("source_path", "string", "The .rpt to import."),
+                       Opt("source_path", "string", "The .rpt to import (not needed with from_subreport)."),
+                       Opt("from_subreport", "string", "Name of a subreport already embedded in the report, to insert it again."),
                        Opt("name", "string", "Subreport name (default: the file name)."),
                        Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
                        Req("width", "integer", "Width (twips)."), Req("height", "integer", "Height (twips); the section grows to fit."),
