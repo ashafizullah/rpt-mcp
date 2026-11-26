@@ -21,6 +21,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`set_text`** now says in its description that the fields embedded in the object are removed together with its text (`set_text_with_fields` keeps them). The behaviour is the one of the runtime, but it surprised everyone.
 
 ### Fixed
+- **The migrated reports could not connect to the new database** ("No se pudo conectar con la base de datos"): the reports of the previous ERP store `Trusted_Connection=True` (Windows authentication of SQL Server), an attribute that does not exist in the ODBC drivers of SAP B1. It is now set to `False` as soon as a user and a password are given.
 - **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
 - **`export_report` could not set a subreport parameter**: it was only looked up in the main report's parameter list, but a subreport's parameters live in the subreport. The value is now also set on the subreport's own document, and the parameters that still have no value are listed instead of the bare "missing parameter values" from the runtime.
 - **`set_subreport_links` refused a numeric link** between an int32 column and a "number" parameter. The numeric field kinds are now interchangeable.
