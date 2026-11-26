@@ -235,7 +235,8 @@ namespace RptMcp
                 SetTableLink);
 
             // ---------- layout ----------
-            r.Add("set_text", "Replace the text of a text object (or field heading).",
+            r.Add("set_text", "Replace the text of a text object (or field heading). " +
+                   "The fields embedded in the object are removed with its text - use set_text_with_fields to keep them.",
                 Schema(PathArg, Req("object", "string", "Object name, e.g. Text12."), Req("text", "string", "New text."), SubArg, OutArg),
                 SetText);
 

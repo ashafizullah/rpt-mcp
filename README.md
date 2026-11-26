@@ -28,10 +28,12 @@ An [MCP](https://modelcontextprotocol.io) server that lets AI assistants (Claude
 | `add_group` / `delete_group` | Group on a field (per shift, per day, per month…); returns the new Group Header/Footer sections. Subtotals are formulas like `Sum({T.Qty}, {T.Shift})` in the group footer |
 | `add_sort` / `delete_sort` | Record sort (ascending/descending); on a grouped field `add_sort` flips the group's order |
 | `add_running_total` / `delete_running_total` | Running totals (sum, count, distinct count, average, min, max) evaluated per record, on change of a field/group or on a formula, and reset never / per field / per group / on a formula |
-| `set_command_sql` | Replace the SQL of an existing SQL Command table (experimental) |
-| `add_table` | Add a database table (OLE DB / ADO, e.g. SQL Server or LocalDB) so its columns can be placed on the report; returns the column list |
-| `set_datasource` | Repoint tables to another server/database, optionally switching OLE DB provider (persisted) |
-| `remove_table` | Remove a table / command (guarded: refuses while its fields are used unless `force`) |
+| `set_command_sql` | Replace the SQL of an existing SQL Command table |
+| `add_table` | Add a database table (OLE DB / ADO, e.g. SQL Server or LocalDB) so its columns can be placed on the report; returns the column list. With `sql` it adds a **SQL command table** instead (the report runs the query): the way to read a table whose columns are reserved words in the database, or to filter in the database. `copy_connection_from` clones the connection of an existing table (e.g. ODBC/RDO to SAP HANA, which has no OLE DB provider) |
+| `set_datasource` | Repoint tables to another server/database, optionally switching OLE DB provider (persisted). `connection_string` replaces the whole ODBC connection string, `rename_to` points a table at its equivalent in the new database |
+| `remove_table` | Remove a table / command (guarded: refuses while its fields are used unless `force`); `orphaned` drops a table of a database that no longer exists, without connecting to it |
+| `remove_table_field` | Remove a column from the model of a table, so it stops being part of the query (e.g. a column whose name is a reserved word in the database) |
+| `set_table_link` | How two tables are joined: `inner` or `left` (an outer join keeps the rows of the main table that have no match) and on which fields; `none` drops the link. A table that can be reached by two paths cannot be joined with an outer join - the conflicting links are reported, and `drop_conflicts` drops them |
 | `set_text` | Change a text object's text |
 | `set_text_with_fields` | Text with embedded fields, e.g. `Shift : {T.Shift}` or `Page {PageNumber} of {TotalPageCount}`, in a new or existing text object |
 | `set_object_props` | Position/size, font, color, alignment, suppress, can-grow; for lines/boxes also end point, line style/thickness/color and box fill |
@@ -134,8 +136,7 @@ Pass `server` / `database` / `user` / `password` / `integrated` directly, or cre
 
 ## Limitations
 
-- **Creating a new SQL Command is not supported.** The in-process Crystal runtime rejects it with "Failed to load database information", even though adding a plain table on the same connection works. `set_command_sql` can only edit a command that already exists, and it has not yet been verified against a report containing one.
-- `add_table` adds tables without links; when a report has several tables, Crystal cross-joins them. Adding table links is not supported yet.
+- `add_table` adds tables without links; link them afterwards with `set_table_link` (a table added this way is not joined to the others, so Crystal cross-joins them until then).
 - Charts, cross-tabs and OLAP grids can be inspected and moved, but not structurally edited.
 - Line styles: the runtime rejects `double`, and draws `dashed`/`dotted` lines as hairlines. Pictures are stored as bitmaps (transparency is flattened to white).
 - Field objects bound directly to a running total cannot be saved by the runtime (`SaveAs` fails with "No error"), so `add_field_object` shows `{#Name}` through a formula `{@Name}` whose text is `{#Name}`. `delete_running_total` removes that formula too.

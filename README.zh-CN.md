@@ -28,10 +28,12 @@
 | `add_group` / `delete_group` | 按字段分组（按班次、按天、按月……）；返回新建的组页眉/组页脚节。小计是组页脚中的公式，例如 `Sum({T.Qty}, {T.Shift})` |
 | `add_sort` / `delete_sort` | 记录排序（升序/降序）；对已分组的字段使用 `add_sort` 会翻转该分组的排序方向 |
 | `add_running_total` / `delete_running_total` | 运行总计（求和、计数、非重复计数、平均值、最小值、最大值），可按每条记录、按字段/分组变化或按公式求值，重置方式可为从不 / 按字段 / 按分组 / 按公式 |
-| `set_command_sql` | 替换已有 SQL 命令表的 SQL（实验性） |
-| `add_table` | 添加数据库表（OLE DB / ADO，例如 SQL Server 或 LocalDB），以便将其列放到报表上；返回列清单 |
-| `set_datasource` | 将表重新指向另一个服务器/数据库，可选切换 OLE DB 提供程序（会持久化保存） |
-| `remove_table` | 移除表 / 命令（有防护：只要其字段仍被使用就会拒绝，除非指定 `force`） |
+| `set_command_sql` | 替换已有 SQL 命令表的 SQL |
+| `add_table` | 添加数据库表（OLE DB / ADO，例如 SQL Server 或 LocalDB），以便将其列放到报表上；返回列清单。带 `sql` 时改为添加 **SQL 命令表**（报表直接运行该查询）：这是读取列名为数据库保留字的表、或在数据库端过滤数据的办法。`copy_connection_from` 会克隆已有表的连接（例如 ODBC/RDO 连接到 SAP HANA，它没有 OLE DB 提供程序） |
+| `set_datasource` | 将表重新指向另一个服务器/数据库，可选切换 OLE DB 提供程序（会持久化保存）。`connection_string` 替换整个 ODBC 连接字符串，`rename_to` 让某个表指向新数据库中的等价表 |
+| `remove_table` | 移除表 / 命令（有防护：只要其字段仍被使用就会拒绝，除非指定 `force`）；`orphaned` 可在不连接数据库的情况下移除属于已不存在数据库的表 |
+| `remove_table_field` | 从表的模型中移除某一列，使其不再出现在查询中（例如列名在数据库中是保留字的情况） |
+| `set_table_link` | 两张表之间的连接方式：`inner` 或 `left`（外连接会保留主表中没有匹配的行）以及按哪些字段连接；`none` 表示删除连接。若某张表可经由两条路径到达，则不能用外连接——冲突的连接会被列出，`drop_conflicts` 可将其删除 |
 | `set_text` | 修改文本对象的文本 |
 | `set_text_with_fields` | 带内嵌字段的文本，例如 `Shift : {T.Shift}` 或 `Page {PageNumber} of {TotalPageCount}`，写入新建或已有的文本对象 |
 | `set_object_props` | 位置/大小、字体、颜色、对齐、抑制显示、可增大；对于线条/框还支持终点、线型/线粗/线颜色以及框的填充 |
@@ -134,8 +136,7 @@ Claude Desktop / 其他客户端（`mcpServers` 配置）：
 
 ## 限制
 
-- **不支持创建新的 SQL 命令。** 进程内的 Crystal 运行时会以 “Failed to load database information” 拒绝该操作，尽管在同一连接上添加普通表却能成功。`set_command_sql` 只能编辑已存在的命令，且尚未针对包含 SQL 命令的报表进行验证。
-- `add_table` 添加表时不带链接；当报表中有多张表时，Crystal 会对它们做交叉联接。目前尚不支持添加表链接。
+- `add_table` 添加表时不带链接；之后可用 `set_table_link` 建立连接（在此之前 Crystal 会对这些表做交叉联接）。
 - 图表、交叉表和 OLAP 网格可以检查和移动，但不能进行结构性编辑。
 - 线型：运行时会拒绝 `double`，并把 `dashed`/`dotted` 线条画成极细线。图片以位图存储（透明会被压平成白色）。
 - 直接绑定到运行总计的字段对象无法由运行时保存（`SaveAs` 会以 “No error” 失败），因此 `add_field_object` 通过一个文本为 `{#Name}` 的公式 `{@Name}` 来显示 `{#Name}`。`delete_running_total` 也会移除该公式。

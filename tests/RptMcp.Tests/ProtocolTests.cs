@@ -177,6 +177,40 @@ namespace RptMcp.Tests
         }
 
         [Fact]
+        public void Database_tools_offer_their_options()
+        {
+            using (var c = new McpClient())
+            {
+                var tools = (JArray)c.Request("tools/list")["result"]["tools"];
+                var names = tools.Select(t => (string)t["name"]).ToList();
+                foreach (var expected in new[] { "set_table_link", "set_command_sql", "remove_table_field", "remove_table", "set_datasource" })
+                    Assert.Contains(expected, names);
+
+                JObject Properties(string tool) => (JObject)tools.Single(t => (string)t["name"] == tool)["inputSchema"]["properties"];
+
+                var link = Properties("set_table_link");
+                Assert.Equal("string", (string)link["source"]["type"]);
+                Assert.Equal("string", (string)link["target"]["type"]);
+                Assert.Equal("string", (string)link["join"]["type"]);
+                Assert.Equal("boolean", (string)link["drop_conflicts"]["type"]);
+                // the join types have to be documented where the agent reads them
+                var joinDoc = (string)link["join"]["description"];
+                foreach (var t in new[] { "inner", "left", "none" }) Assert.Contains(t, joinDoc);
+
+                var add = Properties("add_table");
+                Assert.Equal("string", (string)add["sql"]["type"]);
+                Assert.Equal("string", (string)add["copy_connection_from"]["type"]);
+
+                var remove = Properties("remove_table");
+                Assert.Equal("boolean", (string)remove["orphaned"]["type"]);
+
+                var datasource = Properties("set_datasource");
+                Assert.Equal("string", (string)datasource["connection_string"]["type"]);
+                Assert.Equal("string", (string)datasource["rename_to"]["type"]);
+            }
+        }
+
+        [Fact]
         public void Batch_edit_rejects_non_edit_tools_before_opening_the_file()
         {
             using (var c = new McpClient())

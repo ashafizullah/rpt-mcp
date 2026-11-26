@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`remove_table_field`**: remove a column from the model of a table, so it stops being part of the query (same "reserved word" problem as above).
 - **`set_table_link` with `drop_conflicts=true`**: a table that can be reached by two different paths (e.g. `CRD1` through `ODLN` and also through `OCRD`) cannot be joined with an outer join - Crystal builds an invalid query and the report fails with "Error de conector de base de datos". The links that reach the same table are now reported in `conflicting_links`, and dropped on request.
 
+### Changed
+- **`set_text`** now says in its description that the fields embedded in the object are removed together with its text (`set_text_with_fields` keeps them). The behaviour is the one of the runtime, but it surprised everyone.
+
 ### Fixed
 - **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
 - **`export_report` could not set a subreport parameter**: it was only looked up in the main report's parameter list, but a subreport's parameters live in the subreport. The value is now also set on the subreport's own document, and the parameters that still have no value are listed instead of the bare "missing parameter values" from the runtime.
