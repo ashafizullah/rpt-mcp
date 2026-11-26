@@ -170,9 +170,13 @@ namespace RptMcp
 
             r.Add("remove_table",
                 "Remove a table or SQL command from the report. Refused while any of its fields is used, unless force=true. " +
-                "Even with force, formulas / selection formulas that reference it must be changed first (Crystal refuses otherwise).",
+                "Even with force, formulas / selection formulas that reference it must be changed first (Crystal refuses otherwise). " +
+                "For a table of a database that no longer exists (the tables of the previous ERP) pass orphaned=true: it is dropped " +
+                "without connecting, which is otherwise impossible.",
                 Schema(PathArg, Req("table", "string", "Table alias."),
-                       Opt("force", "boolean", "Delete the objects bound to its fields, then remove the table."), SubArg, OutArg),
+                       Opt("force", "boolean", "Delete the objects bound to its fields, then remove the table."),
+                       Opt("orphaned", "boolean", "The table belongs to a database that no longer exists: drop it without connecting to it."),
+                       SubArg, OutArg),
                 RemoveTable);
 
             r.Add("add_table",
@@ -201,6 +205,20 @@ namespace RptMcp
                                SubArg, OutArg }
                        .Concat(LogonArgs("target server/database + credentials")).ToArray()),
                 SetDatasource);
+
+            r.Add("set_table_link",
+                "Change how two tables of the report are joined. An inner join ('EqualJoin') drops the records of the " +
+                "main table that have no matching row in the joined one, which is why a report can come out empty even " +
+                "though the data is there; 'LeftJoin' keeps them. Pass source and target as 'Table.Field' (several fields " +
+                "separated by a comma) and the join type to use. join='none' removes the link between the two tables " +
+                "(useful to delete a link that points at fields the table no longer has).",
+                Schema(new[] { PathArg,
+                               Req("source", "string", "Fields of the source table, e.g. 'ODLN.DocEntry' (comma-separated for a composite link)."),
+                               Req("target", "string", "Fields of the target table, e.g. 'DLN1.DocEntry' (comma-separated for a composite link)."),
+                               Req("join", "string", "Join type: 'inner', 'left' or 'none' (removes the link)."),
+                               Opt("subreport", "string", "Subreport to work on (omit for the main report)."),
+                               OutArg }),
+                SetTableLink);
 
             // ---------- layout ----------
             r.Add("set_text", "Replace the text of a text object (or field heading).",

@@ -64,6 +64,193 @@ namespace RptMcp
             return new JObject { ["subreport"] = name, ["links"] = ApplyLinks(main, name, links, (bool?)a["replace"] ?? false) };
         });
 
+        private static bool SamePair(string a1, string a2, string b1, string b2) =>
+            (Eq(a1, b1) && Eq(a2, b2)) || (Eq(a1, b2) && Eq(a2, b1));
+
+        private static JArray LinkListOf(DD.Database db) =>
+            new JArray(db.TableLinks.Cast<DD.TableLink>()
+                .Select(l => $"{l.SourceTableAlias} {l.JoinType} {l.TargetTableAlias}"));
+
+        /// <summary>
+        /// Changes the join type of a table link. An inner join drops the records of the main table
+        /// that have no matching row in the joined one, so a report can come out empty even though
+        /// the data is there; a left outer join keeps them.
+        /// </summary>
+        private static JToken SetTableLink(JObject a) => Edit(a, main =>
+        {
+            var ras = Ras.For(main, Sub(a));
+            var source = (string)a["source"];
+            var target = (string)a["target"];
+            if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
+                throw new ToolError("Give source and target as 'Table.Field'.");
+
+            var srcFields = source.Split(',').Select(f => f.Trim()).Where(f => f.Length > 0).ToList();
+            var dstFields = target.Split(',').Select(f => f.Trim()).Where(f => f.Length > 0).ToList();
+            if (srcFields.Count != dstFields.Count)
+                throw new ToolError("source and target must have the same number of fields.");
+            if (!srcFields[0].Contains(".") || !dstFields[0].Contains("."))
+                throw new ToolError("source and target must be 'Table.Field'.");
+            var srcTable = srcFields[0].Split('.')[0];
+            var dstTable = dstFields[0].Split('.')[0];
+
+            var join = ((string)a["join"] ?? "").Trim().ToLowerInvariant();
+            if (join == "none" || join == "remove")
+            {
+                // Drop the link between the two tables. The designer derives the links from the
+                // joins, so both collections have to change, and the way they are stored matters:
+                // TableLinks is rebuilt and assigned, TableJoins is emptied and refilled.
+                var db0 = ras.Db.Database;
+                var links0 = new DD.TableLinks();
+                foreach (var l in db0.TableLinks.Cast<DD.TableLink>())
+                    if (!SamePair(l.SourceTableAlias, l.TargetTableAlias, srcTable, dstTable))
+                        links0.Add(l);
+                db0.TableLinks = links0;
+                var joins0 = db0.TableJoins;
+                var keep = joins0.Cast<DD.TableJoin>()
+                    .Where(j => !SamePair(j.SourceTableAlias, j.TargetTableAlias, srcTable, dstTable))
+                    .Select(j => (DD.TableJoin)j.Clone(true)).ToList();
+                joins0.RemoveAll();
+                foreach (var j in keep) joins0.Add(j);
+                return Compact(new JObject
+                {
+                    ["source"] = source, ["target"] = target, ["join"] = "none", ["removed"] = true,
+                    ["links"] = LinkListOf(db0),
+                });
+            }
+            var joinType = join switch
+            {
+                "inner" or "equal" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorInnerJoin,
+                "left" or "leftouter" or "left_outer" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin,
+                "right" or "rightouter" or "right_outer" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorRightOuterJoin,
+                "outer" or "full" => DD.CrTableJoinOperatorEnum.crTableJoinOperatorFullOuterJoin,
+                _ => throw new ToolError("join must be 'inner' or 'left'."),
+            };
+
+            // The designer keeps the join operators in TableJoins and derives the TableLinks from
+            // them, so the operator has to be set in both. The collection has to be assigned back
+            // as a whole: changing an item in place is discarded when the report is saved.
+            var db = ras.Db.Database;
+            var joins = db.TableJoins;
+            var current = joins.Cast<DD.TableJoin>().FirstOrDefault(j =>
+                Eq(j.SourceTableAlias, srcTable) && Eq(j.TargetTableAlias, dstTable));
+
+            if (current == null)
+            {
+                var j = new DD.TableJoin
+                {
+                    SourceTableAlias = srcTable,
+                    TargetTableAlias = dstTable,
+                    JoinOperator = joinType,
+                    EnforceJoin = DD.CrTableJoinEnforcedEnum.crTableJoinEnforcedBoth,
+                };
+                var fl = new DD.FieldLinks();
+                for (int i = 0; i < srcFields.Count; i++)
+                    fl.Add(new DD.FieldLink
+                    {
+                        FromField = Field(db, srcTable, srcFields[i]),
+                        ToField = Field(db, dstTable, dstFields[i]),
+                        LinkOperator = DD.CrFieldLinkOperatorEnum.crFieldLinkOperatorEqualLink,
+                    });
+                j.FieldLinks = fl;
+                joins.Add(j);
+            }
+            else
+            {
+                current.JoinOperator = joinType;
+                // The fields of an existing join have to be replaced too: the designer keeps them in
+                // the join (and from there in the tables), so only the operator would change.
+                var fl = new DD.FieldLinks();
+                for (int i = 0; i < srcFields.Count; i++)
+                    fl.Add(new DD.FieldLink
+                    {
+                        FromField = Field(db, srcTable, srcFields[i]),
+                        ToField = Field(db, dstTable, dstFields[i]),
+                        LinkOperator = DD.CrFieldLinkOperatorEnum.crFieldLinkOperatorEqualLink,
+                    });
+                current.FieldLinks = fl;
+            }
+
+            // Rebuild the links and assign the collection back, otherwise the change is lost on save.
+            // Every link is cloned: re-adding an object that already belongs to the collection drops it.
+            // The field names are stored without the table prefix; with it Crystal builds the
+            // link as "ALIAS.ALIAS.FIELD".
+            var links = new DD.TableLinks();
+            foreach (var l in db.TableLinks.Cast<DD.TableLink>())
+            {
+                var copy = (DD.TableLink)l.Clone(true);
+                if (Eq(l.SourceTableAlias, srcTable) && Eq(l.TargetTableAlias, dstTable))
+                {
+                    copy.JoinType = joinType == DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin
+                        ? DD.CrTableJoinTypeEnum.crTableJoinTypeLeftOuterJoin
+                        : DD.CrTableJoinTypeEnum.crTableJoinTypeEqualJoin;
+                    copy.SourceFieldNames = Strings(srcFields.Select(Bare).ToList());
+                    copy.TargetFieldNames = Strings(dstFields.Select(Bare).ToList());
+                }
+                links.Add(copy);
+            }
+            if (!links.Cast<DD.TableLink>().Any(l => Eq(l.SourceTableAlias, srcTable) && Eq(l.TargetTableAlias, dstTable)))
+                links.Add(new DD.TableLink
+                {
+                    SourceTableAlias = srcTable,
+                    TargetTableAlias = dstTable,
+                    SourceFieldNames = Strings(srcFields.Select(Bare).ToList()),
+                    TargetFieldNames = Strings(dstFields.Select(Bare).ToList()),
+                    JoinType = joinType == DD.CrTableJoinOperatorEnum.crTableJoinOperatorLeftOuterJoin
+                        ? DD.CrTableJoinTypeEnum.crTableJoinTypeLeftOuterJoin
+                        : DD.CrTableJoinTypeEnum.crTableJoinTypeEqualJoin,
+                });
+            db.TableLinks = links;
+
+            return Compact(new JObject
+            {
+                ["source"] = source,
+                ["target"] = target,
+                ["join"] = joinType.ToString().Replace("crTableJoinOperator", ""),
+                ["links"] = ReportTools.DescribeLinks(main, Sub(a)),
+                ["table_joins"] = new JArray(joins.Cast<DD.TableJoin>().Select(j => new JObject
+                {
+                    ["source"] = j.SourceTableAlias,
+                    ["target"] = j.TargetTableAlias,
+                    ["operator"] = j.JoinOperator.ToString().Replace("crTableJoinOperator", ""),
+                })),
+                ["table_links"] = new JArray(ras.Db.Database.TableLinks.Cast<DD.TableLink>().Select(l => new JObject
+                {
+                    ["source"] = l.SourceTableAlias,
+                    ["target"] = l.TargetTableAlias,
+                    ["type"] = l.JoinType.ToString().Replace("crTableJoinType", ""),
+                })),
+            });
+        });
+
+        /// <summary>Builds a RAS Strings collection out of the given names.</summary>
+        private static DD.Strings Strings(List<string> names)
+        {
+            var s = new DD.StringsClass();
+            foreach (var n in names) s.Add(n);
+            return s;
+        }
+
+        /// <summary>The field name without the "Table." prefix.</summary>
+        private static string Bare(string name) => name.Contains(".") ? name.Split('.').Last() : name;
+
+        /// <summary>Finds a field of a table by name (e.g. "DocEntry"), for building a join.</summary>
+        private static DD.ISCRField Field(DD.Database db, string alias, string name)
+        {
+            // the caller passes "Table.Field"; here only the field name is needed
+            var field = name.Contains(".") ? name.Split('.').Last() : name;
+            var table = db.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias))
+                        ?? throw new ToolError($"No table with alias '{alias}'.");
+            var f = table.DataFields.Cast<DD.ISCRField>().FirstOrDefault(x => Eq(x.Name, field))
+                    ?? throw new ToolError($"Table '{alias}' has no field '{field}'.");
+            return f;
+        }
+
+        private static bool SameFields(object names, List<string> wanted)
+        {
+            var list = (names as object[] ?? new object[0]).Select(o => Convert.ToString(o)).ToList();
+            return list.Count == wanted.Count && !wanted.Where((w, i) => !Eq(list[i], w)).Any();
+        }
+
         /// <summary>
         /// Adds (or with replace, sets) links. A link passes a main report value to the subreport:
         /// a main parameter to a subreport parameter ({?Start} -> {?Start}), or a main field/formula to a subreport field
@@ -83,6 +270,7 @@ namespace RptMcp
             var removed = replace ? current.ToList() : new List<(string Main, string Sub, string Param)>();
             if (replace) current.Clear();
             var filters = new List<(string Field, string Param)>();
+            var requestedFieldLinks = new List<(string Main, string Field)>();
 
             foreach (var item in requested)
             {
@@ -96,10 +284,16 @@ namespace RptMcp
                 if (subIsParam && !SameType(mainField.Type, subField.Type))
                     throw new ToolError($"{mainForm} is {TypeText(mainField.Type)} but the subreport's {subField.FormulaForm} is {TypeText(subField.Type)}.");
 
-                // Crystal's own naming for the parameter behind a field link.
+                // Crystal's own naming for the parameter behind a field link. A link to a parameter
+                // passes the value straight to it, so the parameter is the linked name itself; a link
+                // to a field goes through a hidden parameter ("Pm-<field>") that Crystal creates.
                 var param = subIsParam ? subField.FormulaForm : "{?Pm-" + Norm(mainForm, null) + "}";
-                if (!subIsParam) filters.Add((subField.FormulaForm, param));
-                current.RemoveAll(l => Eq(l.Param, param));
+                if (!subIsParam)
+                {
+                    filters.Add((subField.FormulaForm, param));
+                    requestedFieldLinks.Add((mainForm, subField.FormulaForm));
+                }
+                current.RemoveAll(l => Eq(l.Sub, subField.FormulaForm));
                 current.Add((mainForm, subField.FormulaForm, param));
             }
 
@@ -109,10 +303,24 @@ namespace RptMcp
             try { controller.SetSubreportLinks(name, links); }
             catch (COMException ex) { throw new ToolError($"Crystal refused the links: {ex.Message.Trim()}"); }
 
+            // Crystal may rename the parameter behind a field link when the name is already taken
+            // ("Pm-Orders.Customer??01"). The filter must use the name Crystal really used, or the
+            // subreport reads a parameter that is never filled and returns no data.
+            var actual = controller.GetSubreportLinks(name).Cast<RD.SubreportLink>()
+                .Select(l => (Main: l.MainReportFieldName, Sub: l.SubreportFieldName, Param: l.LinkedParameterName)).ToList();
+            for (int i = 0; i < filters.Count; i++)
+            {
+                var want = requestedFieldLinks[i];
+                var a = actual.FirstOrDefault(x => Eq(x.Main, want.Main) && Eq(x.Sub, want.Field));
+                if (!string.IsNullOrEmpty(a.Param) && !Eq(a.Param, filters[i].Param))
+                    filters[i] = (filters[i].Field, a.Param);
+            }
+
             // Filter the subreport by each new field link; drop the filters of field links that were removed.
             var dd = subDoc.DataDefinition;
             var selection = dd.RecordSelectionFormula ?? "";
-            foreach (var r in removed.Where(r => !current.Any(c => Eq(c.Param, r.Param)) && !Eq(r.Sub, r.Param)))
+            foreach (var r in removed.Where(r => !current.Any(c => Eq(c.Param, r.Param)) && !Eq(r.Sub, r.Param)
+                                              && !string.IsNullOrEmpty(r.Param)))
                 selection = WithoutClause(selection, $"{r.Sub} = {r.Param}");
             foreach (var (field, param) in filters)
             {
@@ -157,7 +365,7 @@ namespace RptMcp
 
         internal static JArray LinkList(E.ReportDocument main, string name) =>
             new JArray(main.ReportClientDocument.SubreportController.GetSubreportLinks(name).Cast<RD.SubreportLink>()
-                .Select(l => Eq(l.SubreportFieldName, l.LinkedParameterName)
+                .Select(l => string.IsNullOrEmpty(l.LinkedParameterName) || Eq(l.SubreportFieldName, l.LinkedParameterName)
                     ? $"{l.MainReportFieldName} -> {l.SubreportFieldName}"
                     : $"{l.MainReportFieldName} -> {l.SubreportFieldName} (via {l.LinkedParameterName})"));
     }

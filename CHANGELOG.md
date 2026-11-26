@@ -8,12 +8,20 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`add_table` with `copy_connection_from`**: clones the connection of an existing table verbatim, keeping its driver. Needed for databases Crystal can only reach through the driver already stored in the report — e.g. SAP Business One on HANA, which uses the ODBC (RDO) driver and has no OLE DB provider. The connection string is rewritten to the target server/database. The table may also be taken from the main report when adding to a subreport.
 - **`set_datasource` with `connection_string`**: replaces the whole ODBC connection string. The ODBC/RDO driver keeps it in a single property, so the report kept using the old server (e.g. the SQL Server of the previous ERP) even after the server and database were changed.
 - **`set_datasource` with `rename_to`**: points a table of the previous ERP at its equivalent in the new one (`{OldTable.X}` becomes `{NewTable.X}`).
+- **`set_table_link`**: change how two tables are joined (`inner` / `left`) and on which fields. The link and its operator live in two different collections (`TableJoins` keeps the operator, `TableLinks` the fields) and the designer derives one from the other, so both are written.
+- **`set_table_link` with `join="none"`**: drop the link between two tables.
+- **`remove_table` with `orphaned=true`**: remove a table of a database that no longer exists (e.g. the tables of the previous ERP). Crystal cannot even resolve it - it tries to connect to read its columns - so it is dropped without connecting.
 
 ### Fixed
 - **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
 - **`export_report` could not set a subreport parameter**: it was only looked up in the main report's parameter list, but a subreport's parameters live in the subreport. The value is now also set on the subreport's own document, and the parameters that still have no value are listed instead of the bare "missing parameter values" from the runtime.
 - **`set_subreport_links` refused a numeric link** between an int32 column and a "number" parameter. The numeric field kinds are now interchangeable.
 - **The build targeted the 32-bit Crystal runtime by default.** The assembly search now prefers the .NET 4 GAC (`v4.0_13.0.4000.0`, 64-bit) and only falls back to the legacy GAC (`13.0.2000.0`) on older SPs, matching the release build.
+- **`set_table_link` only changed the operator of an existing link, never its fields** (the fields live in the join's `FieldLinks`). The fields are now rewritten as well.
+- **`set_table_link` dropped the other links of the report**: rebuilding the collection re-used the link objects, which already belonged to it. Each link is now cloned before the collection is assigned.
+- **`remove_table` with `force` wiped the whole subreport** (its formulas and objects): the fallback emptied the fields of the table, and that rewrote the data definition. The links that point at the table are now dropped instead, and only then the table is removed.
+- **A link whose fields no longer exist could not be removed**: Crystal keeps the link in the table's own properties. Recreating the table (`remove_table` + `add_table`) is the way to get rid of it; the formulas and objects that used it have to be recreated as well.
+- **`set_subreport_links` wrote the filter of a field link with the parameter name it expected**, but Crystal may rename the parameter it creates behind the link (`Pm-Orders.Customer??01`) when the name is taken. The filter now uses the name Crystal really used, so the subreport is not filtered by a parameter that is never filled.
 
 ## [0.1.6] - 2026-10-01
 

@@ -177,6 +177,7 @@ namespace RptMcp
             name = Norm(name, "?");
 
             var def = FindParameter(rd, sub, name)
+                ?? FindParameter(rd, sub, name.TrimStart('?'))
                 ?? throw new ToolError($"Parameter '{key}' not found.");
             object Convert(JToken v)
             {

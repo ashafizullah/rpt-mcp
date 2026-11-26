@@ -370,14 +370,54 @@ namespace RptMcp
             var table = ras.Db.Database.Tables.Cast<DD.Table>().FirstOrDefault(t => Eq(t.Alias, alias))
                         ?? throw new ToolError($"Table '{alias}' not found.");
             bool force = (bool?)a["force"] ?? false;
+            // A table of a database that no longer exists (e.g. the tables of the previous ERP) cannot
+            // even be resolved: Crystal tries to connect to read its columns and fails. When the caller
+            // says it is orphaned, drop it without touching the database.
+            if ((bool?)a["orphaned"] ?? false)
+            {
+                // The table of a database that no longer exists still has its fields registered, and
+                // Crystal refuses to drop it while a link references them. Drop the links first.
+                DropLinksTo(ras, table.Alias);
+                ras.Db.RemoveTable(table.Alias);
+                return new JObject { ["table"] = table.Alias, ["action"] = "removed", ["orphaned"] = true };
+            }
             var forms = table.DataFields.Cast<DD.ISCRField>().Select(f => f.FormulaForm).ToList();
             var removed = GuardUsage(main, Sub(a), ras, forms, $"Table '{table.Alias}'", force);
             // Unlike formulas, Crystal refuses to drop a table while objects are bound to it, so delete them first.
             foreach (var name in removed.Values<string>())
                 ras.ReportDef.ReportObjectController.Remove(ras.Object(name));
-            ras.Db.RemoveTable(table.Alias);
+            try
+            {
+                ras.Db.RemoveTable(table.Alias);
+            }
+            catch (System.Runtime.InteropServices.COMException) when (force)
+            {
+                // Crystal keeps the table while a link still points at its fields (the designer
+                // derives the links from the joins). Drop those links and try again: emptying the
+                // table's fields instead would wipe the rest of the data definition.
+                DropLinksTo(ras, table.Alias);
+                ras.Db.RemoveTable(table.Alias);
+            }
             return new JObject { ["table"] = table.Alias, ["action"] = "removed", ["removed_objects"] = removed };
         });
+
+        /// <summary>Removes every link (and join) that points at the given table.</summary>
+        private static void DropLinksTo(Ras ras, string alias)
+        {
+            var db = ras.Db.Database;
+            for (int i = db.TableJoins.Count - 1; i >= 0; i--)
+            {
+                var j = (DD.TableJoin)db.TableJoins[i];
+                if (Eq(j.SourceTableAlias, alias) || Eq(j.TargetTableAlias, alias))
+                    db.TableJoins.Remove(i);
+            }
+            for (int i = db.TableLinks.Count - 1; i >= 0; i--)
+            {
+                var l = (DD.TableLink)db.TableLinks[i];
+                if (Eq(l.SourceTableAlias, alias) || Eq(l.TargetTableAlias, alias))
+                    db.TableLinks.Remove(i);
+            }
+        }
 
         private static JToken AddTable(JObject a)
         {

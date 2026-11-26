@@ -262,7 +262,7 @@ namespace RptMcp
             return res;
         }
 
-        private static JArray DescribeLinks(E.ReportDocument main, string sub)
+        internal static JArray DescribeLinks(E.ReportDocument main, string sub)
         {
             var res = new JArray();
             foreach (DD.TableLink l in Ras.For(main, sub).Db.Database.TableLinks)
