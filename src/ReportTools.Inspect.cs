@@ -102,7 +102,10 @@ namespace RptMcp
             }
             o["parameters"] = parameters;
 
-            o["formulas"] = new JObject(dd.FormulaFields.Cast<E.FormulaFieldDefinition>().Select(f => new JProperty(f.Name, f.Text ?? "")));
+            // A report can hold two formula fields with the same name (e.g. one in the main report and
+            // one in a subreport); JObject rejects duplicate property names, so they are grouped.
+            o["formulas"] = new JObject(dd.FormulaFields.Cast<E.FormulaFieldDefinition>()
+                .GroupBy(f => f.Name).Select(g => new JProperty(g.Key, g.First().Text ?? "")));
             var sqlExpr = new JObject(dd.SQLExpressionFields.Cast<E.SQLExpressionFieldDefinition>().Select(f => new JProperty(f.Name, f.Text ?? "")));
             if (sqlExpr.Count > 0) o["sql_expressions"] = sqlExpr;
             var running = new JObject(dd.RunningTotalFields.Cast<E.RunningTotalFieldDefinition>()

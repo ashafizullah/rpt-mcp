@@ -652,12 +652,39 @@ namespace RptMcp
                          ?? throw new ToolError($"Table '{alias}' not found.");
 
             // The command table takes over the alias of the table it replaces.
+            // Its qualified name has to name the database too ("<db>.<alias>"): the report
+            // engine opens the session of the command with the database of the table, and
+            // without it the export fails with "Invalid database argument".
+            // The connection is copied into a new object (like add_table does): sharing the
+            // connection of the replaced table leaves Crystal with a broken connection and
+            // the export fails with "Could not connect to the database".
+            var src = target.ConnectionInfo;
+            DD.ConnectionInfo ci = src;
+            if (src != null)
+            {
+                ci = new DD.ConnectionInfo
+                {
+                    Kind = src.Kind,
+                    Attributes = new DD.PropertyBag(),
+                    UserName = src.UserName,
+                    Password = src.Password,
+                };
+                foreach (var k in src.Attributes.PropertyIDs.Cast<string>()) ci.Attributes[k] = src.Attributes[k];
+                var olp = Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag;
+                if (olp != null)
+                {
+                    var nlp = new DD.PropertyBag();
+                    foreach (var k in olp.PropertyIDs.Cast<string>()) nlp[k] = olp[k];
+                    ci.Attributes["QE_LogonProperties"] = nlp;
+                }
+            }
             var cmd = new DD.CommandTable
             {
                 Name = target.Alias,
                 Alias = target.Alias,
+                QualifiedName = string.IsNullOrEmpty(logon.Database) ? target.Alias : $"{logon.Database}.{target.Alias}",
                 CommandText = (string)a["sql"],
-                ConnectionInfo = target.ConnectionInfo,
+                ConnectionInfo = ci,
             };
             if (cmd.ConnectionInfo != null)
             {
@@ -749,6 +776,18 @@ namespace RptMcp
                     }
                     // Rename the table itself, e.g. to point a table of the previous ERP at its
                     // equivalent in the new one ({OldTable.X} -> {NewTable.X}).
+                    // Arbitrary logon properties of the driver (null removes the key): e.g. to move the
+                    // database from "Database" (SQL Server style) to "Initial Catalog" (ODBC) or to
+                    // change the credentials stored in the report.
+                    if (a["logon_properties"] is JObject lprops)
+                    {
+                        foreach (var p in lprops.Properties())
+                        {
+                            if (lp == null) break;
+                            if (p.Value == null || p.Value.Type == JTokenType.Null) { try { lp.Remove(p.Name); } catch { } }
+                            else lp[p.Name] = p.Value.ToString();
+                        }
+                    }
                     var renameTo = (string)a["rename_to"];
                     if (!string.IsNullOrWhiteSpace(renameTo))
                     {
@@ -761,6 +800,15 @@ namespace RptMcp
                         nt.Name = newName;
                         nt.Alias = newName;
                         nt.QualifiedName = logon.Database + "." + newName;
+                    }
+                    // Point the table at another object of the database (a view, for instance) without
+                    // touching its alias: the {Alias.Column} references of the report keep working.
+                    var qualified = (string)a["qualified_name"];
+                    if (!string.IsNullOrWhiteSpace(qualified))
+                    {
+                        if (nt is DD.CommandTable)
+                            throw new ToolError($"Table '{t.Alias}' is a SQL command and has no qualified name.");
+                        nt.QualifiedName = qualified.Trim();
                     }
                     var provider = (string)a["provider"];
                     if (!string.IsNullOrWhiteSpace(provider))
@@ -800,11 +848,41 @@ namespace RptMcp
             if (!hit) bag[keys[0]] = value;
         }
 
+        /// <summary>
+        /// The ODBC (RDO) driver takes the database from the "Initial Catalog" logon property.
+        /// The reports of the previous ERP (SQL Server) store "Database" and "Database DLL" instead:
+        /// with that key Crystal opens the session of a SQL command table without a database and the
+        /// connection fails with "Invalid database argument", so the ODBC key is added and the
+        /// SQL Server one removed.
+        /// </summary>
+        private static void FixOdbcDatabase(DD.PropertyBag lp, string database)
+        {
+            if (lp == null || string.IsNullOrEmpty(database)) return;
+            var ids = lp.PropertyIDs.Cast<string>().ToList();
+            if (!ids.Any(k => Eq(k, "Database"))) return;          // nothing to fix
+            if (!ids.Any(k => Eq(k, "Initial Catalog"))) lp["Initial Catalog"] = database;
+            foreach (var k in ids.Where(k => Eq(k, "Database") || Eq(k, "Database DLL")).ToList())
+                try { lp.Remove(k); } catch { lp[k] = ""; }
+        }
+
         private static void ApplyCredentials(DD.ConnectionInfo ci, ReportIO.Logon l)
         {
-            if (ci == null || l == null || l.Integrated || string.IsNullOrEmpty(l.User)) return;
+            if (ci == null || l == null) return;
+            if (!string.IsNullOrEmpty(l.Database))
+                FixOdbcDatabase(Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag, l.Database);
+            if (l.Integrated || string.IsNullOrEmpty(l.User)) return;
             ci.UserName = l.User;
             ci.Password = l.Password ?? "";
+            // The ODBC (RDO) driver takes the credentials from the logon properties, and a SQL
+            // command table is opened with the stored ones (the runtime logon does not reach it):
+            // without "User ID"/"Password" in the properties the export fails with
+            // "Could not connect to the database".
+            var lpb = Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag;
+            if (lpb != null)
+            {
+                lpb["User ID"] = l.User;
+                lpb["Password"] = l.Password ?? "";
+            }
             // Los informes del ERP antiguo (SQL Server) guardaban "Trusted_Connection=True",
             // es decir, autenticacion de Windows. Ese atributo no existe en los drivers ODBC
             // de SAP B1 y hace que la conexion falle con "No se pudo conectar con la base de

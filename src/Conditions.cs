@@ -76,8 +76,10 @@ namespace RptMcp
                         : PropertiesOf(formula, indexer.PropertyType).FirstOrDefault(p => p.Name == "Text")?.GetValue(formula, null) as string;
                 }
                 catch { continue; }
-                if (!string.IsNullOrWhiteSpace(text))
-                    result[path + "." + ShortName(kind.ToString())] = text;
+                if (text == null) continue;
+                // A formula whose text is empty is still a formula: Crystal 13 fails evaluating it
+                // ("A number is required"), so it is reported too.
+                result[path + "." + ShortName(kind.ToString())] = text;
             }
         }
 

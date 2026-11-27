@@ -213,6 +213,8 @@ namespace RptMcp
                                Opt("provider", "string", "OLE DB provider to switch to, e.g. MSOLEDBSQL (the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
                                Opt("connection_string", "string", "Full ODBC connection string to store, e.g. 'DRIVER={B1CRHPROXY};SERVERNODE=SRVSAP:30015;DATABASE=SBODEMOES'. Keeps the ODBC/RDO driver of the report."),
                                Opt("rename_to", "string", "New table name/alias, e.g. 'ITM10' to point a table of the previous ERP at its equivalent in the new one ({Old.X} becomes {New.X})."),
+                                Opt("qualified_name", "string", "Full name of the table in the database, e.g. 'TEST_VTBAT_SLIMP.ODLN' or 'TEST_VTBAT_SLIMP.MY_VIEW'. Points the table at another object (a view) keeping its alias, so the {Alias.Column} references do not change."),
+                                Opt("logon_properties", "object", "Logon properties of the driver, e.g. {\"Initial Catalog\": \"TEST_VTBAT_SLIMP\", \"Password\": null} (null removes the key)."),
                                SubArg, OutArg }
                        .Concat(LogonArgs("target server/database + credentials")).ToArray()),
                 SetDatasource);
