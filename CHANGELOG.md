@@ -4,6 +4,41 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **`add_table` with `copy_connection_from`**: clones the connection of an existing table verbatim, keeping its driver. Needed for databases Crystal can only reach through the driver already stored in the report — e.g. SAP Business One on HANA, which uses the ODBC (RDO) driver and has no OLE DB provider. The connection string is rewritten to the target server/database. The table may also be taken from the main report when adding to a subreport.
+- **`set_datasource` with `connection_string`**: replaces the whole ODBC connection string. The ODBC/RDO driver keeps it in a single property, so the report kept using the old server (e.g. the SQL Server of the previous ERP) even after the server and database were changed.
+- **`set_datasource` with `rename_to`**: points a table of the previous ERP at its equivalent in the new one (`{OldTable.X}` becomes `{NewTable.X}`).
+- **`set_table_link`**: change how two tables are joined (`inner` / `left`) and on which fields. The link and its operator live in two different collections (`TableJoins` keeps the operator, `TableLinks` the fields) and the designer derives one from the other, so both are written.
+- **`set_table_link` with `join="none"`**: drop the link between two tables.
+- **`remove_table` with `orphaned=true`**: remove a table of a database that no longer exists (e.g. the tables of the previous ERP). Crystal cannot even resolve it - it tries to connect to read its columns - so it is dropped without connecting.
+- **`add_table` with `sql=`**: add a SQL command table - the report uses the result of the query as its data source. The way to read a table whose columns are reserved words in the database (Crystal writes the SQL without quoting them, and the query fails with "invalid column name"), or to filter in the database instead of in the report.
+- **`set_command_sql`**: replace the SQL text of a SQL command table.
+- **`replace_table_with_sql`**: replace an existing table by a SQL command table with the *same alias*, so every `{Table.Field}` reference in the report keeps working. This is the way to migrate a view of the previous ERP to a query over the new database without touching the formulas, the objects, the groups and the running totals: the query returns the columns the report uses, aliased to the legacy names. The table keeps its links; its field list becomes the columns of the query.
+- **`remove_table_field`**: remove a column from the model of a table, so it stops being part of the query (same "reserved word" problem as above).
+- **`set_table_link` with `drop_conflicts=true`**: a table that can be reached by two different paths (e.g. `CRD1` through `ODLN` and also through `OCRD`) cannot be joined with an outer join - Crystal builds an invalid query and the report fails with "Error de conector de base de datos". The links that reach the same table are now reported in `conflicting_links`, and dropped on request.
+
+### Added
+- **`set_datasource` with `qualified_name`**: points a table at another object of the database (a view, for instance) **keeping its alias**, so the `{Alias.Column}` references of the report keep working. It is the way to migrate a view of the previous ERP when the ODBC driver of SAP Business One refuses SQL command tables.
+- **`set_datasource` with `logon_properties`**: sets or removes any logon property of the driver (`{"Initial Catalog": "TEST_VTBAT_SLIMP", "Password": null}`; a null removes the key).
+
+### Changed
+- **`set_text`** now says in its description that the fields embedded in the object are removed together with its text (`set_text_with_fields` keeps them). The behaviour is the one of the runtime, but it surprised everyone.
+
+### Fixed
+- **The migrated reports could not connect to the new database** ("No se pudo conectar con la base de datos"): the reports of the previous ERP store `Trusted_Connection=True` (Windows authentication of SQL Server), an attribute that does not exist in the ODBC drivers of SAP B1. It is now set to `False` as soon as a user and a password are given.
+- **`inspect_report` / `diff_reports` failed with "Can not add property {X}"** when a text object embeds the same field more than once (e.g. `{CRD1.City}` twice). The embedded-field map is now de-duplicated by data source, so `include_objects=true` works on such reports.
+- **`export_report` could not set a subreport parameter**: it was only looked up in the main report's parameter list, but a subreport's parameters live in the subreport. The value is now also set on the subreport's own document, and the parameters that still have no value are listed instead of the bare "missing parameter values" from the runtime.
+- **`set_subreport_links` refused a numeric link** between an int32 column and a "number" parameter. The numeric field kinds are now interchangeable.
+- **The build targeted the 32-bit Crystal runtime by default.** The assembly search now prefers the .NET 4 GAC (`v4.0_13.0.4000.0`, 64-bit) and only falls back to the legacy GAC (`13.0.2000.0`) on older SPs, matching the release build.
+- **`set_table_link` only changed the operator of an existing link, never its fields** (the fields live in the join's `FieldLinks`). The fields are now rewritten as well.
+- **`set_table_link` dropped the other links of the report**: rebuilding the collection re-used the link objects, which already belonged to it. Each link is now cloned before the collection is assigned.
+- **`remove_table` with `force` wiped the whole subreport** (its formulas and objects): the fallback emptied the fields of the table, and that rewrote the data definition. The links that point at the table are now dropped instead, and only then the table is removed.
+- **A link whose fields no longer exist could not be removed**: Crystal keeps the link in the table's own properties. Recreating the table (`remove_table` + `add_table`) is the way to get rid of it; the formulas and objects that used it have to be recreated as well.
+- **`set_subreport_links` wrote the filter of a field link with the parameter name it expected**, but Crystal may rename the parameter it creates behind the link (`Pm-Orders.Customer??01`) when the name is taken. The filter now uses the name Crystal really used, so the subreport is not filtered by a parameter that is never filled.
+- **`set_table_link` changed nothing**: the link does not live in the `TableLinks` collection alone, the designer keeps it in the table, so rebuilding the collection was discarded on save. The link is now changed through the controller (`RemoveTableLink` / `AddTableLink`), which persists.
+- **`set_datasource` repointed the connection but not the tables**: the qualified name (`OldDb.ODLN`) is a property of the table, so the query kept using the old database. It is now rewritten together with the connection.
+- **`add_subreport` with `from_subreport`**: insert a subreport that is already embedded in the report again (same data definition, same links). The runtime refuses to add a subreport object to a report, so this only works for a report that Crystal imports from a file - the error says so.
+
 ## [0.1.6] - 2026-10-01
 
 ### Added
@@ -89,3 +124,4 @@ First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas
 [0.1.2]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ashafizullah/rpt-mcp/releases/tag/v0.1.0
+

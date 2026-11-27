@@ -102,7 +102,10 @@ namespace RptMcp
             }
             o["parameters"] = parameters;
 
-            o["formulas"] = new JObject(dd.FormulaFields.Cast<E.FormulaFieldDefinition>().Select(f => new JProperty(f.Name, f.Text ?? "")));
+            // A report can hold two formula fields with the same name (e.g. one in the main report and
+            // one in a subreport); JObject rejects duplicate property names, so they are grouped.
+            o["formulas"] = new JObject(dd.FormulaFields.Cast<E.FormulaFieldDefinition>()
+                .GroupBy(f => f.Name).Select(g => new JProperty(g.Key, g.First().Text ?? "")));
             var sqlExpr = new JObject(dd.SQLExpressionFields.Cast<E.SQLExpressionFieldDefinition>().Select(f => new JProperty(f.Name, f.Text ?? "")));
             if (sqlExpr.Count > 0) o["sql_expressions"] = sqlExpr;
             var running = new JObject(dd.RunningTotalFields.Cast<E.RunningTotalFieldDefinition>()
@@ -121,11 +124,14 @@ namespace RptMcp
                 ? ras.Objects().OfType<RD.FieldObject>().ToDictionary(f => f.Name, f => FormatText(f.FieldFormat, f.FieldValueType.ToString()), StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>();
             // Fields embedded in text objects carry their own format.
+            // A text object may embed the same field more than once (e.g. {CRD1.City} twice); JObject
+            // rejects duplicate property names, so the entries are de-duplicated by data source first.
             var embedded = objects
                 ? ras.Objects().OfType<RD.TextObject>()
                     .Select(t => new { t.Name, Fields = EmbeddedFields(t) }).Where(x => x.Fields.Count > 0)
-                    .ToDictionary(x => x.Name, x => new JObject(x.Fields.Select(e => new JProperty(e.DataSource,
-                        FormatText(e.FieldFormat, FieldTypeName(ras, e.DataSource)) ?? "default"))), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(x => x.Name, x => new JObject(x.Fields
+                        .GroupBy(e => e.DataSource ?? "", StringComparer.OrdinalIgnoreCase)
+                        .Select(g => new JProperty(g.Key, FormatText(g.First().FieldFormat, FieldTypeName(ras, g.Key)) ?? "default"))), StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, JObject>();
 
             var sections = new JObject();
@@ -259,7 +265,7 @@ namespace RptMcp
             return res;
         }
 
-        private static JArray DescribeLinks(E.ReportDocument main, string sub)
+        internal static JArray DescribeLinks(E.ReportDocument main, string sub)
         {
             var res = new JArray();
             foreach (DD.TableLink l in Ras.For(main, sub).Db.Database.TableLinks)

@@ -170,33 +170,89 @@ namespace RptMcp
 
             r.Add("remove_table",
                 "Remove a table or SQL command from the report. Refused while any of its fields is used, unless force=true. " +
-                "Even with force, formulas / selection formulas that reference it must be changed first (Crystal refuses otherwise).",
+                "Even with force, formulas / selection formulas that reference it must be changed first (Crystal refuses otherwise). " +
+                "For a table of a database that no longer exists (the tables of the previous ERP) pass orphaned=true: it is dropped " +
+                "without connecting, which is otherwise impossible.",
                 Schema(PathArg, Req("table", "string", "Table alias."),
-                       Opt("force", "boolean", "Delete the objects bound to its fields, then remove the table."), SubArg, OutArg),
+                       Opt("force", "boolean", "Delete the objects bound to its fields, then remove the table."),
+                       Opt("orphaned", "boolean", "The table belongs to a database that no longer exists: drop it without connecting to it."),
+                       SubArg, OutArg),
                 RemoveTable);
+
+            r.Add("remove_table_field",
+                "Remove a column from the model of a table (it stops being part of the query). " +
+                "Needed when a column is a reserved word in the database - e.g. ODCI.Import / ODCI.Export in SAP Business One on HANA: " +
+                "Crystal writes the SQL without quoting them and the query fails with 'invalid column name'.",
+                Schema(PathArg, Req("table", "string", "Table alias."),
+                       Req("field", "string", "Column to remove from the model."),
+                       Opt("force", "boolean", "Remove it even if objects use it (the objects bound to it are deleted with it)."),
+                       SubArg, OutArg),
+                RemoveTableField);
 
             r.Add("add_table",
                 "Add a database table to the report (OLE DB / ADO, e.g. SQL Server), so its columns can be used in field objects and formulas. " +
                 "Crystal connects to read the column list, so the server must be reachable; the columns are returned. " +
-                "The new table is not linked to existing tables. To repoint tables that are already in the report, use set_datasource.",
+                "The new table is not linked to existing tables. To repoint tables that are already in the report, use set_datasource. " +
+                "For a database Crystal can only reach through a driver already stored in the report (e.g. ODBC/RDO to SAP HANA, " +
+                "which has no OLE DB provider), pass copy_connection_from with the alias of a table to copy that connection from.",
                 Schema(new[] { PathArg, Req("table", "string", "Table name, optionally with schema: 'Orders' or 'dbo.Orders' (schema defaults to dbo)."),
                                Opt("alias", "string", "Alias used in field names, {Alias.Column} (default: the table name)."),
+                                Opt("sql", "string", "Instead of a table: a SQL query. The report uses its result as the data source (a SQL command table). Lets you read a table whose columns are reserved words in the database (Crystal writes the SQL without quoting them) or filter in the database."),
                                Opt("provider", "string", "OLE DB provider (default MSOLEDBSQL; the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
+                               Opt("copy_connection_from", "string", "Alias of an existing table whose connection is copied verbatim (keeps its driver, e.g. ODBC/RDO); OLE DB is not used then."),
                                SubArg, OutArg }
                        .Concat(LogonArgs("server, database and credentials; integrated security when no user is given")).ToArray()),
                 AddTable);
 
             r.Add("set_datasource",
                 "Point tables at another server/database and persist it in the .rpt (e.g. switch a template from a dev to a production database). " +
-                "Applies to the main report and all subreports unless 'subreport' is given.",
+                "Applies to the main report and all subreports unless 'subreport' is given. " +
+                "For ODBC/RDO reports the driver keeps the whole connection in one string: pass connection_string to replace it " +
+                "(e.g. 'DRIVER={B1CRHPROXY};SERVERNODE=SRVSAP:30015;DATABASE=SBODEMOES'), otherwise the old server stays in use.",
                 Schema(new[] { PathArg, Opt("table", "string", "Only this table alias (default all)."),
                                Opt("provider", "string", "OLE DB provider to switch to, e.g. MSOLEDBSQL (the legacy SQLOLEDB cannot reach LocalDB or TLS 1.2-only servers)."),
+                               Opt("connection_string", "string", "Full ODBC connection string to store, e.g. 'DRIVER={B1CRHPROXY};SERVERNODE=SRVSAP:30015;DATABASE=SBODEMOES'. Keeps the ODBC/RDO driver of the report."),
+                               Opt("rename_to", "string", "New table name/alias, e.g. 'ITM10' to point a table of the previous ERP at its equivalent in the new one ({Old.X} becomes {New.X})."),
+                                Opt("qualified_name", "string", "Full name of the table in the database, e.g. 'TEST_VTBAT_SLIMP.ODLN' or 'TEST_VTBAT_SLIMP.MY_VIEW'. Points the table at another object (a view) keeping its alias, so the {Alias.Column} references do not change."),
+                                Opt("logon_properties", "object", "Logon properties of the driver, e.g. {\"Initial Catalog\": \"TEST_VTBAT_SLIMP\", \"Password\": null} (null removes the key)."),
                                SubArg, OutArg }
                        .Concat(LogonArgs("target server/database + credentials")).ToArray()),
                 SetDatasource);
 
+            r.Add("replace_table_with_sql",
+                "Replace an existing table of the report by a SQL command table with the SAME alias, so that every " +
+                "{Table.Field} reference in the report keeps working. Use it to migrate a view of the previous ERP " +
+                "to a query over the new database while keeping the report's formulas and objects untouched. " +
+                "The SQL must return the columns the report uses (alias them to the legacy names). " +
+                "The table keeps its links; the field list is replaced by the columns of the query.",
+                Schema(new[] { PathArg,
+                               Req("table", "string", "Alias of the table to replace."),
+                               Req("sql", "string", "The query that becomes the new data source of the table."),
+                               Opt("subreport", "string", "Subreport to work on (omit for the main report)."),
+                               OutArg }
+                        .Concat(LogonArgs("server, database and credentials used for the connection")).ToArray()),
+                ReplaceTableWithSql);
+
+            r.Add("set_table_link",
+                "Change how two tables of the report are joined. An inner join ('EqualJoin') drops the records of the " +
+                "main table that have no matching row in the joined one, which is why a report can come out empty even " +
+                "though the data is there; 'LeftJoin' keeps them. Pass source and target as 'Table.Field' (several fields " +
+                "separated by a comma) and the join type to use. join='none' removes the link between the two tables " +
+                "(useful to delete a link that points at fields the table no longer has).",
+                Schema(new[] { PathArg,
+                               Req("source", "string", "Fields of the source table, e.g. 'ODLN.DocEntry' (comma-separated for a composite link)."),
+                               Req("target", "string", "Fields of the target table, e.g. 'DLN1.DocEntry' (comma-separated for a composite link)."),
+                               Req("join", "string", "Join type: 'inner', 'left' or 'none' (removes the link)."),
+                Opt("drop_conflicts", "boolean", "With a left join: also drop the other links that reach the same table " +
+                       "(a table reachable by two paths cannot be joined with an outer join - Crystal then fails with " +
+                       "'Error de conector de base de datos'). The conflicting links are always reported."),
+                               Opt("subreport", "string", "Subreport to work on (omit for the main report)."),
+                               OutArg }),
+                SetTableLink);
+
             // ---------- layout ----------
-            r.Add("set_text", "Replace the text of a text object (or field heading).",
+            r.Add("set_text", "Replace the text of a text object (or field heading). " +
+                   "The fields embedded in the object are removed with its text - use set_text_with_fields to keep them.",
                 Schema(PathArg, Req("object", "string", "Object name, e.g. Text12."), Req("text", "string", "New text."), SubArg, OutArg),
                 SetText);
 
@@ -274,9 +330,12 @@ namespace RptMcp
 
             r.Add("add_subreport",
                 "Insert another .rpt as a subreport (Crystal copies it into this report). The runtime cannot create an empty report, so build the " +
-                "subreport as its own .rpt first (e.g. copy a report and trim it with these tools). Link it with links / set_subreport_links so it does not prompt.",
+                "subreport as its own .rpt first (e.g. copy a report and trim it with these tools). Link it with links / set_subreport_links so it does not prompt. " +
+                "With from_subreport the subreport already embedded in the report is inserted again (same data definition, same links), " +
+                "which is also the way to replace a subreport object that no longer renders.",
                 Schema(PathArg, Req("section", "string", "Section of the main report, e.g. ReportFooterSection1 or a group footer."),
-                       Req("source_path", "string", "The .rpt to import."),
+                       Opt("source_path", "string", "The .rpt to import (not needed with from_subreport)."),
+                       Opt("from_subreport", "string", "Name of a subreport already embedded in the report, to insert it again."),
                        Opt("name", "string", "Subreport name (default: the file name)."),
                        Req("left", "integer", "Left (twips)."), Req("top", "integer", "Top (twips)."),
                        Req("width", "integer", "Width (twips)."), Req("height", "integer", "Height (twips); the section grows to fit."),

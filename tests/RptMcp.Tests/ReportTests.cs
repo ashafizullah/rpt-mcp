@@ -47,6 +47,16 @@ namespace RptMcp.Tests
             throw new SkipException("The test report has no text object.");
         }
 
+        /// <summary>A text object without embedded fields: changing its text changes nothing else.</summary>
+        private static (string Section, string Text) FirstPlainTextObject(JObject inspect)
+        {
+            foreach (var s in ((JObject)inspect["sections"]).Properties())
+                foreach (var o in ((JObject)s.Value["objects"] ?? new JObject()).Properties())
+                    if ((string)o.Value["kind"] == "Text" && ((JObject)(o.Value["embedded_fields"] ?? new JObject())).Count == 0)
+                        return (s.Name, o.Name);
+            throw new SkipException("The test report has no text object without embedded fields.");
+        }
+
         [SkippableFact]
         public void Inspect_describes_sections_and_objects()
         {
@@ -84,7 +94,9 @@ namespace RptMcp.Tests
             RequireReport();
             using (var c = new McpClient())
             {
-                var (_, text) = FirstTextObject(c.CallOk("inspect_report", new JObject { ["path"] = _report }));
+                // A text with embedded fields loses them when its text is replaced, so the diff
+                // would report two changes; take a plain text object.
+                var (_, text) = FirstPlainTextObject(c.CallOk("inspect_report", new JObject { ["path"] = _report }));
                 var res = c.CallOk("set_text", new JObject { ["path"] = _report, ["object"] = text, ["text"] = "changed" });
                 var backup = (string)res["backup"];
                 Assert.True(File.Exists(backup));
@@ -321,7 +333,10 @@ namespace RptMcp.Tests
             using (var c = new McpClient())
             {
                 var png = Path.Combine(_dir, "page.png");
-                var r = c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = png, ["pages"] = "1", ["parameters"] = DefaultParameters(c) });
+                var first = c.Call("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = png, ["pages"] = "1", ["parameters"] = DefaultParameters(c) });
+                if (first.IsError) SkipIfDatabaseUnreachable(first.Text);
+                Assert.True(!first.IsError, first.Text);
+                var r = JObject.Parse(first.Text);
                 Assert.Equal(png, (string)((JArray)r["exported"]).Single());
                 var bytes = File.ReadAllBytes(png);
                 Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, bytes.Take(4));
@@ -346,25 +361,155 @@ namespace RptMcp.Tests
             }
         }
 
+        /// <summary>
+        /// Needs a reachable SQL Server: RPTMCP_TEST_DB_SERVER and RPTMCP_TEST_DB_DATABASE
+        /// (Windows integrated security), e.g. (localdb)\MSSQLLocalDB / rptmcp.
+        /// </summary>
+        [SkippableFact]
+        public void Sql_command_table_can_be_added_and_its_sql_replaced()
+        {
+            RequireReport();
+            string server = Environment.GetEnvironmentVariable("RPTMCP_TEST_DB_SERVER");
+            string database = Environment.GetEnvironmentVariable("RPTMCP_TEST_DB_DATABASE");
+            Skip.If(string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(database),
+                "Set RPTMCP_TEST_DB_SERVER and RPTMCP_TEST_DB_DATABASE to run the SQL command test.");
+            const string alias = "RptMcpCmd";
+
+            using (var c = new McpClient())
+            {
+                var added = c.CallOk("add_table", new JObject
+                {
+                    ["path"] = _report, ["table"] = alias, ["alias"] = alias,
+                    ["sql"] = "SELECT 1 AS A", ["server"] = server, ["database"] = database, ["integrated"] = true
+                });
+                Assert.True((bool)added["command"]);
+                Assert.Contains("SELECT 1 AS A", (string)added["sql"]);
+                Assert.NotEmpty(added["fields"].Values<string>());
+
+                var changed = c.CallOk("set_command_sql", new JObject
+                {
+                    ["path"] = _report, ["table"] = alias, ["sql"] = "SELECT 2 AS B",
+                    ["server"] = server, ["database"] = database, ["integrated"] = true
+                });
+                Assert.Equal(alias, (string)changed["table"]);
+                Assert.Contains("SELECT 1 AS A", (string)changed["old_sql"]);
+
+                var inspected = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_fields"] = true });
+                Assert.Equal("command", (string)inspected["tables"][alias]["type"]);
+                Assert.Contains("SELECT 2 AS B", (string)inspected["tables"][alias]["sql"]);
+            }
+        }
+
         /// <summary>Exports to CSV, giving every prompting parameter its first default value (or a value of its type).</summary>
-        private void ExportCsv(McpClient c, string csv) =>
-            c.CallOk("export_report", new JObject { ["path"] = _report, ["format"] = "csv", ["output_path"] = csv, ["parameters"] = DefaultParameters(c) });
+        private void ExportCsv(McpClient c, string csv)
+        {
+            var res = c.Call("export_report", new JObject { ["path"] = _report, ["format"] = "csv", ["output_path"] = csv, ["parameters"] = DefaultParameters(c) });
+            if (res.IsError) SkipIfDatabaseUnreachable(res.Text);
+            Assert.True(!res.IsError, res.Text);
+        }
+
+        /// <summary>The links of the report as "Source.Field Operator Target.Field".</summary>
+        private List<string> Links(McpClient c) =>
+            ((JArray)c.CallOk("inspect_report", new JObject { ["path"] = _report })["links"] ?? new JArray())
+                .Select(l => (string)l).ToList();
+
+        /// <summary>
+        /// Skips the test when the database of the test report cannot be reached: that is the
+        /// environment, not the tool. The message of the runtime is localized, so it is matched loosely.
+        /// </summary>
+        private static void SkipIfDatabaseUnreachable(string text)
+        {
+            var t = text ?? "";
+            if (t.IndexOf("conectar", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                t.IndexOf("connect", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                t.IndexOf("LogOnException", StringComparison.OrdinalIgnoreCase) >= 0)
+                Skip.If(true, "The database of the test report is not reachable: " + t);
+        }
+
+        [SkippableFact]
+        public void Table_link_can_be_changed_to_an_outer_join_and_removed_again()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var links = Links(c);
+                Skip.If(links.Count == 0, "The test report has no table link.");
+                var parts = links[0].Split(' ');
+                var source = parts[0];
+                var target = parts[2];
+
+                var inner = c.CallOk("set_table_link", new JObject { ["path"] = _report, ["source"] = source, ["target"] = target, ["join"] = "inner" });
+                Assert.Equal("inner", (string)inner["join"]);
+                Assert.True((bool)inner["removed"] == false);
+
+                // An outer join on a table that is reachable by two paths needs the redundant
+                // path to be dropped, otherwise Crystal builds an invalid query.
+                var left = c.CallOk("set_table_link", new JObject { ["path"] = _report, ["source"] = source, ["target"] = target, ["join"] = "left", ["drop_conflicts"] = true });
+                Assert.Equal("left", (string)left["join"]);
+                Assert.NotNull(left["conflicting_links"]);
+                Assert.NotNull(left["dropped_links"]);
+                Assert.Contains(Links(c), l => l.Contains(source + " LeftOuterJoin " + target));
+
+                var none = c.CallOk("set_table_link", new JObject { ["path"] = _report, ["source"] = source, ["target"] = target, ["join"] = "none" });
+                Assert.True((bool)none["removed"]);
+                Assert.DoesNotContain(Links(c), l => l.StartsWith(source + " ") && l.EndsWith(" " + target));
+            }
+        }
+
+        [SkippableFact]
+        public void Export_names_the_subreport_parameter_that_is_missing()
+        {
+            RequireReport();
+            using (var c = new McpClient())
+            {
+                var details = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_subreports"] = true })["subreport_details"] as JObject;
+                Skip.If(details == null, "The test report has no subreport.");
+                var missing = details.Properties()
+                    .Select(p => new { Sub = p.Name, Param = ((JObject)p.Value["parameters"] ?? new JObject()).Properties().FirstOrDefault(x => x.Value["linked"]?.Value<bool>() != true) })
+                    .FirstOrDefault(x => x.Param != null);
+                Skip.If(missing == null, "The test report has no unlinked subreport parameter.");
+
+                // the parameters of the subreport are left out on purpose: the export has to fail
+                var res = c.Call("export_report", new JObject { ["path"] = _report, ["format"] = "png", ["output_path"] = Path.Combine(_dir, "x.png"), ["parameters"] = MainParameters(c) });
+                Assert.True(res.IsError);
+                // the error has to say which subreport and which parameter are missing
+                Assert.Contains(missing.Sub + "::" + missing.Param.Name, res.Text);
+            }
+        }
 
         private JObject DefaultParameters(McpClient c)
         {
+            var values = MainParameters(c);
+            // A parameter of a subreport is given as "Subreport::Name"; a linked one takes its
+            // value from the main report and needs nothing.
+            var details = (JObject)(c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_subreports"] = true })["subreport_details"] ?? new JObject());
+            foreach (var sub in details.Properties())
+                foreach (var p in ((JObject)(sub.Value["parameters"] ?? new JObject())).Properties())
+                    if (p.Value["linked"]?.Value<bool>() != true)
+                        values[sub.Name + "::" + p.Name] = DefaultValue(p.Value);
+            return values;
+        }
+
+        /// <summary>The parameters of the report itself, without the ones of its subreports.</summary>
+        private JObject MainParameters(McpClient c)
+        {
             var values = new JObject();
             foreach (var p in ((JObject)c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_objects"] = false })["parameters"]).Properties())
-            {
-                var def = p.Value["defaults"]?.FirstOrDefault();
-                switch ((string)p.Value["type"])
-                {
-                    case "date": case "datetime": values[p.Name] = def ?? "2000-01-01"; break;
-                    case "number": case "currency": values[p.Name] = def ?? "0"; break;
-                    case "boolean": values[p.Name] = def ?? "false"; break;
-                    default: values[p.Name] = def ?? ""; break;
-                }
-            }
+                values[p.Name] = DefaultValue(p.Value);
             return values;
+        }
+
+        /// <summary>The first default value of a parameter, or a value of its type.</summary>
+        private static JToken DefaultValue(JToken parameter)
+        {
+            var def = parameter["defaults"]?.FirstOrDefault();
+            switch ((string)parameter["type"])
+            {
+                case "date": case "datetime": return def ?? "2000-01-01";
+                case "number": case "currency": return def ?? "0";
+                case "boolean": return def ?? "false";
+                default: return def ?? "";
+            }
         }
 
         /// <summary>Adds the RPTMCP_TEST_DB_* table to the report and returns its fields as {Alias.Column}:Type.</summary>
@@ -414,7 +559,8 @@ namespace RptMcp.Tests
                 Assert.True((bool)res["operations"][2]["result"]["group_sort"]);
 
                 var inspected = c.CallOk("inspect_report", new JObject { ["path"] = _report, ["include_objects"] = false });
-                Assert.Equal(field, (string)inspected["groups"].Single());
+                // the report may already have groups of its own
+                Assert.Contains(field, inspected["groups"].Values<string>());
                 Assert.Contains("Count of", (string)inspected["running_totals"]["RptMcpCount"]);
 
                 var csv = Path.Combine(_dir, "group.csv");
@@ -438,7 +584,12 @@ namespace RptMcp.Tests
             {
                 AddTestTable(c, "RptMcpTable");
                 var before = Hash(_report);
-                var res = c.CallOk("verify_database", new JObject { ["path"] = _report });
+                var call = c.Call("verify_database", new JObject { ["path"] = _report });
+                if (call.IsError) SkipIfDatabaseUnreachable(call.Text);
+                Assert.True(!call.IsError, call.Text);
+                var res = JObject.Parse(call.Text);
+                // the report may point at a database this machine cannot reach
+                if (!(bool)res["verified"]) SkipIfDatabaseUnreachable(res.ToString());
                 Assert.True((bool)res["verified"], res.ToString());
                 Assert.Equal(before, Hash(_report));
             }

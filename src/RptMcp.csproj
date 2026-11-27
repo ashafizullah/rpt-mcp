@@ -29,18 +29,20 @@
     <CrToken>692fbea5521e1304</CrToken>
   </PropertyGroup>
   <PropertyGroup Condition="'$(CrGacMsil)' == '' and '$(CrVer)' == ''">
-    <CrGacMsil Condition="Exists('$(CrLegacyGac)\$(CrEngine)\13.0.2000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
-    <CrVer Condition="'$(CrGacMsil)' != ''">13.0.2000.0__$(CrToken)</CrVer>
-    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrLegacyGac)\$(CrEngine)\13.0.4000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
-    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">13.0.4000.0__$(CrToken)</CrVer>
-    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrNet4Gac)\$(CrEngine)\v4.0_13.0.4000.0__$(CrToken)')">$(CrNet4Gac)</CrGacMsil>
-    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">v4.0_13.0.4000.0__$(CrToken)</CrVer>
+    <!-- Prefer the .NET 4 GAC (64-bit, v4.0_13.0.4000.0): it is the modern runtime and the one the
+         release build targets. The legacy GAC (13.0.2000.0) is only the fallback for older SPs. -->
+    <CrGacMsil Condition="Exists('$(CrNet4Gac)\$(CrEngine)\v4.0_13.0.4000.0__$(CrToken)')">$(CrNet4Gac)</CrGacMsil>
+    <CrVer Condition="'$(CrGacMsil)' != ''">v4.0_13.0.4000.0__$(CrToken)</CrVer>
     <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrNet4Gac)\$(CrEngine)\v4.0_13.0.2000.0__$(CrToken)')">$(CrNet4Gac)</CrGacMsil>
     <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">v4.0_13.0.2000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrLegacyGac)\$(CrEngine)\13.0.4000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">13.0.4000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == '' and Exists('$(CrLegacyGac)\$(CrEngine)\13.0.2000.0__$(CrToken)')">$(CrLegacyGac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == '' and '$(CrGacMsil)' != ''">13.0.2000.0__$(CrToken)</CrVer>
   </PropertyGroup>
   <PropertyGroup>
-    <CrGacMsil Condition="'$(CrGacMsil)' == ''">$(CrLegacyGac)</CrGacMsil>
-    <CrVer Condition="'$(CrVer)' == ''">13.0.2000.0__$(CrToken)</CrVer>
+    <CrGacMsil Condition="'$(CrGacMsil)' == ''">$(CrNet4Gac)</CrGacMsil>
+    <CrVer Condition="'$(CrVer)' == ''">v4.0_13.0.4000.0__$(CrToken)</CrVer>
   </PropertyGroup>
 
   <Target Name="ShowCrystalReferences" BeforeTargets="ResolveAssemblyReferences">
