@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`remove_table_field`**: remove a column from the model of a table, so it stops being part of the query (same "reserved word" problem as above).
 - **`set_table_link` with `drop_conflicts=true`**: a table that can be reached by two different paths (e.g. `CRD1` through `ODLN` and also through `OCRD`) cannot be joined with an outer join - Crystal builds an invalid query and the report fails with "Error de conector de base de datos". The links that reach the same table are now reported in `conflicting_links`, and dropped on request.
 
+### Added
+- **`set_datasource` with `qualified_name`**: points a table at another object of the database (a view, for instance) **keeping its alias**, so the `{Alias.Column}` references of the report keep working. It is the way to migrate a view of the previous ERP when the ODBC driver of SAP Business One refuses SQL command tables.
+- **`set_datasource` with `logon_properties`**: sets or removes any logon property of the driver (`{"Initial Catalog": "TEST_VTBAT_SLIMP", "Password": null}`; a null removes the key).
+
 ### Changed
 - **`set_text`** now says in its description that the fields embedded in the object are removed together with its text (`set_text_with_fields` keeps them). The behaviour is the one of the runtime, but it surprised everyone.
 
@@ -120,3 +124,4 @@ First public release: inspect, diff and edit `.rpt` files (text, fonts, formulas
 [0.1.2]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ashafizullah/rpt-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ashafizullah/rpt-mcp/releases/tag/v0.1.0
+

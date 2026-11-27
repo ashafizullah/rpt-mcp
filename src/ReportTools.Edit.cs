@@ -652,9 +652,8 @@ namespace RptMcp
                          ?? throw new ToolError($"Table '{alias}' not found.");
 
             // The command table takes over the alias of the table it replaces.
-            // Its qualified name has to name the database too ("<db>.<alias>"): the report
-            // engine opens the session of the command with the database of the table, and
-            // without it the export fails with "Invalid database argument".
+            // It must NOT have a qualified name: a SQL command is not a table of the database, and
+            // Crystal rejects the report with "Invalid database argument" when it has one.
             // The connection is copied into a new object (like add_table does): sharing the
             // connection of the replaced table leaves Crystal with a broken connection and
             // the export fails with "Could not connect to the database".
@@ -682,7 +681,6 @@ namespace RptMcp
             {
                 Name = target.Alias,
                 Alias = target.Alias,
-                QualifiedName = string.IsNullOrEmpty(logon.Database) ? target.Alias : $"{logon.Database}.{target.Alias}",
                 CommandText = (string)a["sql"],
                 ConnectionInfo = ci,
             };
@@ -873,23 +871,16 @@ namespace RptMcp
             if (l.Integrated || string.IsNullOrEmpty(l.User)) return;
             ci.UserName = l.User;
             ci.Password = l.Password ?? "";
-            // The ODBC (RDO) driver takes the credentials from the logon properties, and a SQL
-            // command table is opened with the stored ones (the runtime logon does not reach it):
-            // without "User ID"/"Password" in the properties the export fails with
-            // "Could not connect to the database".
-            var lpb = Prop2(ci.Attributes, "QE_LogonProperties") as DD.PropertyBag;
-            if (lpb != null)
-            {
-                lpb["User ID"] = l.User;
-                lpb["Password"] = l.Password ?? "";
-            }
+            // The credentials go in the connection string (the working reports of SAP Business One
+            // keep them there): the logon properties of a report saved by the designer do not keep
+            // the password, and a SQL command table is opened with the stored ones.
             // Los informes del ERP antiguo (SQL Server) guardaban "Trusted_Connection=True",
             // es decir, autenticacion de Windows. Ese atributo no existe en los drivers ODBC
             // de SAP B1 y hace que la conexion falle con "No se pudo conectar con la base de
             // datos": hay que desactivarlo en cuanto se dan usuario y clave.
             var attrs = ci.Attributes;
             var lp = Prop2(attrs, "QE_LogonProperties") as DD.PropertyBag;
-            SetExisting(lp, "False", "Trusted_Connection");
+            SetExisting(lp, "0", "Trusted_Connection");
         }
 
         // ---------- layout: engine ----------
